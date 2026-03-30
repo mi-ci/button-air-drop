@@ -566,13 +566,6 @@ function App() {
             오늘 내 기록
             <span className="drawer-arrow">→</span>
           </button>
-          <button
-            className="drawer-item"
-            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          >
-            상단으로 이동
-            <span className="drawer-arrow">→</span>
-          </button>
           <button className="drawer-item" onClick={logout}>
             로그아웃
             <span className="drawer-arrow">→</span>
