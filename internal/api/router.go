@@ -344,7 +344,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSPA(w http.ResponseWriter, r *http.Request) {
-	distPath := "frontend/dist"
+	distPath := resolveDistPath()
 	requestPath := filepath.Join(distPath, r.URL.Path)
 
 	info, err := os.Stat(requestPath)
@@ -499,4 +499,26 @@ func headerContainsToken(header http.Header, key, token string) bool {
 
 func currentRankingDate(now time.Time, loc *time.Location) string {
 	return now.In(loc).Format("2006-01-02")
+}
+
+func resolveDistPath() string {
+	candidates := []string{
+		filepath.Join("frontend", "dist"),
+	}
+
+	if executablePath, err := os.Executable(); err == nil {
+		executableDir := filepath.Dir(executablePath)
+		candidates = append(candidates,
+			filepath.Join(executableDir, "frontend", "dist"),
+			filepath.Join(executableDir, "..", "frontend", "dist"),
+		)
+	}
+
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+
+	return filepath.Join("frontend", "dist")
 }
