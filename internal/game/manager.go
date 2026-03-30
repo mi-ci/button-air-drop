@@ -20,8 +20,6 @@ type State struct {
 	RemainingMS  int64          `json:"remainingMs"`
 	InitialMS    int64          `json:"initialMs"`
 	LeaderEmail  string         `json:"leaderEmail"`
-	LeaderMasked string         `json:"leaderMasked"`
-	HeldMS       int64          `json:"heldMs"`
 	Leaderboard  []RankingEntry `json:"leaderboard"`
 }
 
@@ -106,8 +104,6 @@ func (m *Manager) Snapshot() (State, error) {
 		}
 		state.RemainingMS = remaining.Milliseconds()
 		state.LeaderEmail = m.leaderEmail
-		state.LeaderMasked = MaskEmail(m.leaderEmail)
-		state.HeldMS = now.Sub(m.leaderSince).Milliseconds()
 	}
 
 	rows, err := m.db.Query(`

@@ -64,13 +64,11 @@ function App() {
           return {
             ...current,
             remainingMs: current.initialMs ?? 600000,
-            heldMs: 0,
           };
         }
         return {
           ...current,
           remainingMs: Math.max(0, current.remainingMs - 100),
-          heldMs: current.heldMs + 100,
         };
       });
     }, 100);
@@ -283,18 +281,6 @@ function App() {
           </button>
 
           <div className="meta">
-            <div className="meta-row">
-              <span>현재 리더</span>
-              <strong>
-                {session?.email && gameState?.leaderEmail === session.email
-                  ? session.email
-                  : gameState?.leaderMasked || "아직 없음"}
-              </strong>
-            </div>
-            <div className="meta-row">
-              <span>현재 버틴 시간</span>
-              <strong>{formatDuration(gameState?.heldMs ?? 0)}</strong>
-            </div>
           </div>
 
           {message ? <div className="message">{message}</div> : null}
