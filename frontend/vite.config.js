@@ -5,12 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      "/status": "http://localhost:8080",
-      "/api": "http://localhost:8080",
-      "/ws": {
-        target: "ws://localhost:8080",
-        ws: true,
-      },
+      '/status': 'http://localhost:8080',
     },
   },
 })

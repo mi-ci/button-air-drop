@@ -4,7 +4,10 @@ import "./App.css";
 function App() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-  const [session, setSession] = useState(loadStoredSession);
+  const [session, setSession] = useState(() => {
+    const raw = window.localStorage.getItem("button-air-drop-session");
+    return raw ? JSON.parse(raw) : null;
+  });
   const [gameState, setGameState] = useState(null);
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
@@ -270,7 +273,7 @@ function App() {
             <div className="meta-row">
               <span>현재 리더</span>
               <strong>
-                {session?.email && gameState?.leaderEmail === session.email
+                {gameState?.leaderEmail === session?.email
                   ? session.email
                   : gameState?.leaderMasked || "아직 없음"}
               </strong>
@@ -442,22 +445,3 @@ function formatDuration(ms) {
 }
 
 export default App;
-
-function loadStoredSession() {
-  const raw = window.localStorage.getItem("button-air-drop-session");
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") {
-      window.localStorage.removeItem("button-air-drop-session");
-      return null;
-    }
-    return parsed;
-  } catch {
-    window.localStorage.removeItem("button-air-drop-session");
-    return null;
-  }
-}
