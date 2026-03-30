@@ -15,12 +15,14 @@ function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [myHistory, setMyHistory] = useState(null);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   useEffect(() => {
     fetch("/api/game/state")
       .then((response) => response.json())
       .then(setGameState)
-      .catch(() => setMessage("게임 상태를 불러오지 못했습니다."));
+      .catch(() => setMessage("게임 상태를 불러오지 못했습니다."))
+      .finally(() => setInitialLoading(false));
   }, []);
 
   useEffect(() => {
@@ -225,6 +227,17 @@ function App() {
     setLoginOpen(false);
     setDrawerOpen(false);
     setHistoryOpen(false);
+  }
+
+  if (initialLoading && !gameState) {
+    return (
+      <main className="loading-screen">
+        <div className="loading-card">
+          <span className="pill">button-air-drop</span>
+          <strong>게임 상태 불러오는 중</strong>
+        </div>
+      </main>
+    );
   }
 
   return (
