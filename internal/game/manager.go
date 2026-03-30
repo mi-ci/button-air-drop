@@ -9,6 +9,7 @@ import (
 
 type RankingEntry struct {
 	Rank        int    `json:"rank"`
+	Email       string `json:"email"`
 	MaskedEmail string `json:"maskedEmail"`
 	DurationMS  int64  `json:"durationMs"`
 }
@@ -110,7 +111,7 @@ func (m *Manager) Snapshot() (State, error) {
 	}
 
 	rows, err := m.db.Query(`
-		SELECT masked_email, duration_ms
+		SELECT email, masked_email, duration_ms
 		FROM ranking_entries
 		WHERE ranking_date = ?
 		ORDER BY duration_ms DESC, created_at ASC
@@ -125,7 +126,7 @@ func (m *Manager) Snapshot() (State, error) {
 	for rows.Next() {
 		var entry RankingEntry
 		entry.Rank = rank
-		if err := rows.Scan(&entry.MaskedEmail, &entry.DurationMS); err != nil {
+		if err := rows.Scan(&entry.Email, &entry.MaskedEmail, &entry.DurationMS); err != nil {
 			return state, err
 		}
 		state.Leaderboard = append(state.Leaderboard, entry)

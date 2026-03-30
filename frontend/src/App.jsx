@@ -272,7 +272,11 @@ function App() {
           <div className="meta">
             <div className="meta-row">
               <span>현재 리더</span>
-              <strong>{gameState?.leaderMasked || "아직 없음"}</strong>
+              <strong>
+                {gameState?.leaderEmail === session?.email
+                  ? session.email
+                  : gameState?.leaderMasked || "아직 없음"}
+              </strong>
             </div>
             <div className="meta-row">
               <span>현재 버틴 시간</span>
@@ -300,7 +304,7 @@ function App() {
               leaderboard.map((entry) => (
                 <div className="rank-row" key={`${entry.rank}-${entry.maskedEmail}-${entry.durationMs}`}>
                   <span>
-                    #{entry.rank} {entry.maskedEmail}
+                    #{entry.rank} {entry.email === session?.email ? session.email : entry.maskedEmail}
                   </span>
                   <strong>{formatDuration(entry.durationMs)}</strong>
                 </div>
@@ -362,7 +366,7 @@ function App() {
           <div className="summary-grid">
             <div className="summary-row">
               <span>이메일</span>
-              <strong>{myHistory?.maskedEmail || session?.maskedEmail || "-"}</strong>
+              <strong>{session?.email || myHistory?.maskedEmail || "-"}</strong>
             </div>
             <div className="summary-row">
               <span>시도 횟수</span>
