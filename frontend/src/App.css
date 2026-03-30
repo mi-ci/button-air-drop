@@ -250,12 +250,21 @@ input {
   font-size: 0.9rem;
 }
 
-.message {
-  margin-top: 16px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: rgba(243, 215, 100, 0.12);
-  color: #f3d764;
+.toast-message {
+  position: fixed;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  min-width: min(90vw, 320px);
+  max-width: min(90vw, 560px);
+  padding: 12px 16px;
+  border-radius: 999px;
+  background: rgba(243, 215, 100, 0.96);
+  color: #101512;
+  text-align: center;
+  font-weight: 700;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
 }
 
 .usage-row {

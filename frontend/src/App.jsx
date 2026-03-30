@@ -106,6 +106,18 @@ function App() {
     return () => window.removeEventListener("keydown", handleKeydown);
   }, []);
 
+  useEffect(() => {
+    if (!message) {
+      return undefined;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setMessage("");
+    }, 5000);
+
+    return () => window.clearTimeout(timeout);
+  }, [message]);
+
   const isLeader = session?.email && gameState?.leaderEmail === session.email;
   const leaderboard = gameState?.leaderboard ?? [];
   const yesterdayWinner = gameState?.yesterdayWinner ?? null;
@@ -266,6 +278,8 @@ function App() {
 
   return (
     <main className="app-shell">
+      {message ? <div className="toast-message">{message}</div> : null}
+
       <header className="topbar">
         <div className="brand">
           <span className="brand-tag">shared timer arena</span>
@@ -325,7 +339,6 @@ function App() {
 
           <div className="meta"></div>
 
-          {message ? <div className="message">{message}</div> : null}
         </div>
 
         <div className="panel">
