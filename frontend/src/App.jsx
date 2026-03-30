@@ -58,10 +58,17 @@ function App() {
         if (!current) {
           return current;
         }
+        if (!current.leaderEmail) {
+          return {
+            ...current,
+            remainingMs: current.initialMs ?? 600000,
+            heldMs: 0,
+          };
+        }
         return {
           ...current,
           remainingMs: Math.max(0, current.remainingMs - 100),
-          heldMs: current.leaderEmail ? current.heldMs + 100 : 0,
+          heldMs: current.heldMs + 100,
         };
       });
     }, 100);
