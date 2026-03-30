@@ -234,7 +234,7 @@ function App() {
               className="profile-button"
               onClick={() => setDrawerOpen((value) => !value)}
             >
-              {session.maskedEmail}
+              {session.email}
               <span className={`burger ${drawerOpen ? "is-open" : ""}`}>
                 <span />
                 <span />
@@ -425,7 +425,7 @@ function App() {
       <aside className={`drawer ${drawerOpen ? "is-open" : ""}`}>
         <div className="drawer-header">
           <div className="drawer-user">
-            <strong>{session?.maskedEmail || "-"}</strong>
+            <strong>{session?.email || "-"}</strong>
             <span>오늘 버튼 게임 메뉴</span>
           </div>
           <button className="icon-button" onClick={() => setDrawerOpen(false)}>
