@@ -264,6 +264,12 @@ input {
   gap: 10px;
 }
 
+.winner-block {
+  margin-top: 20px;
+  display: grid;
+  gap: 10px;
+}
+
 .rank-row,
 .history-row,
 .summary-row {

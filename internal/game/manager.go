@@ -21,6 +21,7 @@ type State struct {
 	InitialMS    int64          `json:"initialMs"`
 	LeaderEmail  string         `json:"leaderEmail"`
 	Leaderboard  []RankingEntry `json:"leaderboard"`
+	YesterdayWinner *RankingEntry `json:"yesterdayWinner,omitempty"`
 }
 
 type Manager struct {
@@ -129,7 +130,28 @@ func (m *Manager) Snapshot() (State, error) {
 		rank++
 	}
 
-	return state, rows.Err()
+	if err := rows.Err(); err != nil {
+		return state, err
+	}
+
+	yesterday := rankingDate(now.AddDate(0, 0, -1), m.location)
+	var winner RankingEntry
+	winner.Rank = 1
+	err = m.db.QueryRow(`
+		SELECT email, masked_email, duration_ms
+		FROM ranking_entries
+		WHERE ranking_date = ?
+		ORDER BY duration_ms DESC, created_at ASC
+		LIMIT 1
+	`, yesterday).Scan(&winner.Email, &winner.MaskedEmail, &winner.DurationMS)
+	if err != nil && err != sql.ErrNoRows {
+		return state, err
+	}
+	if err == nil {
+		state.YesterdayWinner = &winner
+	}
+
+	return state, nil
 }
 
 func (m *Manager) finalizeExpired(now time.Time) {

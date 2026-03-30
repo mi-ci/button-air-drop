@@ -91,6 +91,7 @@ function App() {
 
   const isLeader = session?.email && gameState?.leaderEmail === session.email;
   const leaderboard = gameState?.leaderboard ?? [];
+  const yesterdayWinner = gameState?.yesterdayWinner ?? null;
   const rankingDateLabel = gameState?.rankingDate ?? "-";
   const overlayOpen = loginOpen || drawerOpen || historyOpen;
 
@@ -306,6 +307,22 @@ function App() {
                   <strong>{formatDuration(entry.durationMs)}</strong>
                 </div>
               ))
+            )}
+          </div>
+
+          <div className="winner-block">
+            <p className="section-title">Yesterday Winner</p>
+            {yesterdayWinner ? (
+              <div className="rank-row">
+                <span>
+                  {yesterdayWinner.email === session?.email
+                    ? session.email
+                    : yesterdayWinner.maskedEmail}
+                </span>
+                <strong>{formatDuration(yesterdayWinner.durationMs)}</strong>
+              </div>
+            ) : (
+              <div className="empty">어제 기록이 없습니다.</div>
             )}
           </div>
         </div>
