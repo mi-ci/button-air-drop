@@ -365,11 +365,11 @@ function App() {
           )}
         </div>
       </header>
-
-      <section className="hero">
-        <span className="pill">shared timer button game</span>
-      </section>
-
+      {/*
+        <section className="hero">
+          <span className="pill">shared timer button game</span>
+        </section>
+        */}
       <section className="layout">
         <div className="panel">
           <p className="section-title">Live Timer</p>
