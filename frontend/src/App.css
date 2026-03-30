@@ -188,7 +188,7 @@ input {
 }
 
 .timer {
-  margin: 10px 0 16px;
+  margin: 10px 0 24px;
   font-size: clamp(4rem, 13vw, 8rem);
   line-height: 0.88;
   letter-spacing: -0.08em;
@@ -198,6 +198,7 @@ input {
 
 .button-airdrop {
   width: 100%;
+  margin-bottom: 12px;
   padding: 22px 28px;
   border-radius: 999px;
   font-size: 1.1rem;
@@ -278,7 +279,7 @@ input {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  margin-top: 14px;
+  margin-top: 20px;
   text-align: center;
 }
 
