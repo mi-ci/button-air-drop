@@ -1,0 +1,22 @@
+.DS_Store
+
+# Go
+server
+*.exe
+*.test
+*.out
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Environment / local overrides
+.env
+.env.*
+!.env.example
+*.yml
