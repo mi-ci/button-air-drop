@@ -260,5 +260,5 @@ func MaskEmail(email string) string {
 	if at <= 1 {
 		return "***"
 	}
-	return email[:1] + "***" + email[at:]
+	return email[:2] + "***" + email[at:]
 }
