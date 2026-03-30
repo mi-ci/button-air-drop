@@ -36,6 +36,8 @@ type Server struct {
 	codeTTL    time.Duration
 	tokenTTL   time.Duration
 	httpServer http.Handler
+	clickMu    sync.Mutex
+	lastClickAt map[string]time.Time
 }
 
 type ClickUsage struct {
@@ -49,6 +51,9 @@ const (
 	defaultDailyClickLimit = 3
 	adminDailyClickLimit   = 1000
 	adminEmail             = "atm7999@naver.com"
+	clickCooldown          = time.Second
+	authIPWindow           = time.Hour
+	authIPLimit            = 3
 )
 
 type StatusResponse struct {
@@ -81,6 +86,7 @@ func SetupRoutes(cfg *config.Config) (http.Handler, func(context.Context) error,
 		wsHub:     newWSHub(),
 		codeTTL:   time.Duration(cfg.Auth.CodeTTLMinutes) * time.Minute,
 		tokenTTL:  time.Duration(cfg.Auth.AccessTokenHours) * time.Hour,
+		lastClickAt: map[string]time.Time{},
 	}
 
 	mux := http.NewServeMux()
@@ -135,6 +141,25 @@ func (s *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	clientIP := clientIPFromRequest(r)
+	if clientIP == "" {
+		http.Error(w, "invalid client ip", http.StatusBadRequest)
+		return
+	}
+
+	allowed, retryAfter, err := s.allowAuthRequest(clientIP)
+	if err != nil {
+		http.Error(w, "failed to validate auth request limit", http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{
+			"error":      "too many auth requests",
+			"retryAfter": int(retryAfter.Seconds()),
+		})
+		return
+	}
+
 	code := fmt.Sprintf("%06d", rand.IntN(1000000))
 	now := time.Now().In(s.location)
 	expiresAt := now.Add(s.codeTTL)
@@ -148,6 +173,11 @@ func (s *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request) {
 		VALUES (?, ?, ?, ?)
 	`, email, code, expiresAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano)); err != nil {
 		http.Error(w, "failed to save code", http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.logAuthRequest(clientIP, now); err != nil {
+		http.Error(w, "failed to record auth request", http.StatusInternalServerError)
 		return
 	}
 
@@ -262,6 +292,15 @@ func (s *Server) handleGameClick(w http.ResponseWriter, r *http.Request, email s
 	if !allowed {
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{
 			"error":      "daily click limit reached",
+			"clickUsage": usage,
+		})
+		return
+	}
+
+	if ok, retryAfter := s.allowClickNow(email); !ok {
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{
+			"error":      "click cooldown active",
+			"retryAfter": retryAfter.Milliseconds(),
 			"clickUsage": usage,
 		})
 		return
@@ -615,6 +654,89 @@ func clickLimitForEmail(email string) int {
 		return adminDailyClickLimit
 	}
 	return defaultDailyClickLimit
+}
+
+func (s *Server) allowClickNow(email string) (bool, time.Duration) {
+	s.clickMu.Lock()
+	defer s.clickMu.Unlock()
+
+	now := time.Now()
+	last := s.lastClickAt[email]
+	if !last.IsZero() {
+		elapsed := now.Sub(last)
+		if elapsed < clickCooldown {
+			return false, clickCooldown - elapsed
+		}
+	}
+
+	s.lastClickAt[email] = now
+	return true, 0
+}
+
+func (s *Server) allowAuthRequest(ip string) (bool, time.Duration, error) {
+	windowStart := time.Now().Add(-authIPWindow).Format(time.RFC3339Nano)
+	rows, err := s.db.Query(`
+		SELECT created_at
+		FROM auth_request_log
+		WHERE ip_address = ? AND created_at >= ?
+		ORDER BY created_at ASC
+	`, ip, windowStart)
+	if err != nil {
+		return false, 0, err
+	}
+	defer rows.Close()
+
+	count := 0
+	var oldest string
+	for rows.Next() {
+		var createdAt string
+		if err := rows.Scan(&createdAt); err != nil {
+			return false, 0, err
+		}
+		if count == 0 {
+			oldest = createdAt
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		return false, 0, err
+	}
+	if count < authIPLimit {
+		return true, 0, nil
+	}
+
+	oldestTime, err := time.Parse(time.RFC3339Nano, oldest)
+	if err != nil {
+		return false, 0, err
+	}
+	retryAfter := authIPWindow - time.Since(oldestTime)
+	if retryAfter < 0 {
+		retryAfter = 0
+	}
+	return false, retryAfter, nil
+}
+
+func (s *Server) logAuthRequest(ip string, now time.Time) error {
+	_, err := s.db.Exec(`
+		INSERT INTO auth_request_log (ip_address, created_at)
+		VALUES (?, ?)
+	`, ip, now.Format(time.RFC3339Nano))
+	return err
+}
+
+func clientIPFromRequest(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		if len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
 }
 
 func resolveDistPath() string {

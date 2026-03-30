@@ -63,6 +63,15 @@ CREATE TABLE IF NOT EXISTS daily_click_usage (
 	updated_at TEXT NOT NULL,
 	PRIMARY KEY (ranking_date, email)
 );
+
+CREATE TABLE IF NOT EXISTS auth_request_log (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	ip_address TEXT NOT NULL,
+	created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_request_log_ip_created
+	ON auth_request_log(ip_address, created_at);
 `
 
 	_, err := db.Exec(schema)
