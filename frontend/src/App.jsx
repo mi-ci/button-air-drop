@@ -19,25 +19,84 @@ function App() {
   const [clickUsage, setClickUsage] = useState(null);
 
   useEffect(() => {
-    fetch("/api/game/state")
-      .then((response) => response.json())
-      .then(setGameState)
-      .catch(() => setMessage("게임 상태를 불러오지 못했습니다."))
-      .finally(() => setInitialLoading(false));
+    let active = true;
+
+    function loadGameState(showError = true) {
+      fetch("/api/game/state")
+        .then((response) => response.json())
+        .then((data) => {
+          if (!active) {
+            return;
+          }
+          setGameState(data);
+        })
+        .catch(() => {
+          if (active && showError) {
+            setMessage("게임 상태를 불러오지 못했습니다.");
+          }
+        })
+        .finally(() => {
+          if (active) {
+            setInitialLoading(false);
+          }
+        });
+    }
+
+    loadGameState();
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        loadGameState(false);
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      active = false;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   useEffect(() => {
+    let ws;
+    let reconnectTimer;
+    let closedByEffect = false;
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
 
-    ws.onmessage = (event) => {
-      const payload = JSON.parse(event.data);
-      if (payload.type === "state") {
-        setGameState(payload.state);
+    function connect() {
+      ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+      ws.onmessage = (event) => {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "state") {
+          setGameState(payload.state);
+        }
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+
+      ws.onclose = () => {
+        if (closedByEffect) {
+          return;
+        }
+        reconnectTimer = window.setTimeout(connect, 1500);
+      };
+    }
+
+    connect();
+
+    return () => {
+      closedByEffect = true;
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+      }
+      if (ws) {
+        ws.close();
       }
     };
-
-    return () => ws.close();
   }, []);
 
   useEffect(() => {
@@ -113,7 +172,7 @@ function App() {
 
     const timeout = window.setTimeout(() => {
       setMessage("");
-    }, 5000);
+    }, 3000);
 
     return () => window.clearTimeout(timeout);
   }, [message]);
@@ -338,7 +397,6 @@ function App() {
           ) : null}
 
           <div className="meta"></div>
-
         </div>
 
         <div className="panel">
