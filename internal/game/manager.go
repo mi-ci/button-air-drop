@@ -115,7 +115,7 @@ func (m *Manager) Snapshot() (State, error) {
 		FROM ranking_entries
 		WHERE ranking_date = ?
 		ORDER BY duration_ms DESC, created_at ASC
-		LIMIT 20
+		LIMIT 10
 	`, rankingDate(now, m.location))
 	if err != nil {
 		return state, err
