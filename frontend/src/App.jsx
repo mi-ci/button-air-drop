@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 
 function App() {
@@ -39,7 +39,10 @@ function App() {
 
   useEffect(() => {
     if (session) {
-      window.localStorage.setItem("button-air-drop-session", JSON.stringify(session));
+      window.localStorage.setItem(
+        "button-air-drop-session",
+        JSON.stringify(session),
+      );
       return;
     }
     window.localStorage.removeItem("button-air-drop-session");
@@ -81,12 +84,7 @@ function App() {
 
   const isLeader = session?.email && gameState?.leaderEmail === session.email;
   const leaderboard = gameState?.leaderboard ?? [];
-  const rankingDateLabel = useMemo(() => {
-    if (!gameState?.rankingDate) {
-      return "-";
-    }
-    return `${gameState.rankingDate} KST`;
-  }, [gameState?.rankingDate]);
+  const rankingDateLabel = gameState?.rankingDate ?? "-";
   const overlayOpen = loginOpen || drawerOpen || historyOpen;
 
   async function requestCode(event) {
@@ -232,7 +230,10 @@ function App() {
 
         <div className="topbar-actions">
           {session ? (
-            <button className="profile-button" onClick={() => setDrawerOpen((value) => !value)}>
+            <button
+              className="profile-button"
+              onClick={() => setDrawerOpen((value) => !value)}
+            >
               {session.maskedEmail}
               <span className={`burger ${drawerOpen ? "is-open" : ""}`}>
                 <span />
@@ -249,24 +250,23 @@ function App() {
       </header>
 
       <section className="hero">
-        <span className="pill">오늘 자정 KST 초기화</span>
-        <h1>같은 타이머를 보고, 누가 가장 오래 살아남는지 보는 버튼 게임.</h1>
-        <p>
-          로그인 후 버튼을 누르면 현재 리더가 되고, 다른 유저가 가져가거나 타이머가 끝날 때까지
-          버틴 시간이 오늘 랭킹에 기록됩니다. 현재 리더가 자기 자신 버튼을 다시 눌러도 무시됩니다.
-        </p>
+        <span className="pill">{rankingDateLabel} 우승 상품 : CU 2천원</span>
       </section>
 
       <section className="layout">
         <div className="panel">
           <p className="section-title">Live Timer</p>
-          <div className="timer">{formatClock(gameState?.remainingMs ?? 600000)}</div>
+          <div className="timer">
+            {formatClock(gameState?.remainingMs ?? 600000)}
+          </div>
           <button
             className="button-airdrop"
             disabled={pending || !session?.accessToken}
             onClick={clickButton}
           >
-            {isLeader ? "지금은 내가 리더, 재클릭은 무시됨" : "버튼 누르고 현재 리더 되기"}
+            {isLeader
+              ? "지금은 내가 리더, 재클릭은 무시됨"
+              : "버튼 누르고 현재 리더 되기"}
           </button>
 
           <div className="meta">
@@ -282,14 +282,6 @@ function App() {
               <span>현재 버틴 시간</span>
               <strong>{formatDuration(gameState?.heldMs ?? 0)}</strong>
             </div>
-            <div className="meta-row">
-              <span>오늘 랭킹 기준일</span>
-              <strong>{rankingDateLabel}</strong>
-            </div>
-            <div className="meta-row">
-              <span>내 상태</span>
-              <strong>{session?.maskedEmail || "비로그인"}</strong>
-            </div>
           </div>
 
           {message ? <div className="message">{message}</div> : null}
@@ -302,9 +294,15 @@ function App() {
               <div className="empty">아직 기록이 없습니다.</div>
             ) : (
               leaderboard.map((entry) => (
-                <div className="rank-row" key={`${entry.rank}-${entry.maskedEmail}-${entry.durationMs}`}>
+                <div
+                  className="rank-row"
+                  key={`${entry.rank}-${entry.maskedEmail}-${entry.durationMs}`}
+                >
                   <span>
-                    #{entry.rank} {entry.email === session?.email ? session.email : entry.maskedEmail}
+                    #{entry.rank}{" "}
+                    {entry.email === session?.email
+                      ? session.email
+                      : entry.maskedEmail}
                   </span>
                   <strong>{formatDuration(entry.durationMs)}</strong>
                 </div>
@@ -314,10 +312,16 @@ function App() {
         </div>
       </section>
 
-      <div className={`overlay ${overlayOpen ? "is-open" : ""}`} onClick={closeOverlay} />
+      <div
+        className={`overlay ${overlayOpen ? "is-open" : ""}`}
+        onClick={closeOverlay}
+      />
 
       <div className="modal-shell">
-        <div className={`modal ${loginOpen ? "is-open" : ""}`} onClick={(event) => event.stopPropagation()}>
+        <div
+          className={`modal ${loginOpen ? "is-open" : ""}`}
+          onClick={(event) => event.stopPropagation()}
+        >
           <div className="modal-header">
             <div>
               <h2>이메일 로그인</h2>
@@ -342,23 +346,41 @@ function App() {
               placeholder="인증코드 6자리"
             />
             <div className="modal-actions">
-              <button className="primary-button" disabled={pending} onClick={requestCode}>
+              <button
+                className="primary-button"
+                disabled={pending}
+                onClick={requestCode}
+              >
                 인증코드 요청
               </button>
-              <button className="secondary-button" disabled={pending} onClick={verifyCode}>
+              <button
+                className="secondary-button"
+                disabled={pending}
+                onClick={verifyCode}
+              >
                 코드 확인 후 로그인
               </button>
             </div>
           </form>
         </div>
 
-        <div className={`modal ${historyOpen ? "is-open" : ""}`} onClick={(event) => event.stopPropagation()}>
+        <div
+          className={`modal ${historyOpen ? "is-open" : ""}`}
+          onClick={(event) => event.stopPropagation()}
+        >
           <div className="modal-header">
             <div>
               <h2>오늘 내 기록</h2>
-              <p>{myHistory?.rankingDate ? `${myHistory.rankingDate} KST` : "오늘 기록"}</p>
+              <p>
+                {myHistory?.rankingDate
+                  ? `${myHistory.rankingDate} KST`
+                  : "오늘 기록"}
+              </p>
             </div>
-            <button className="icon-button" onClick={() => setHistoryOpen(false)}>
+            <button
+              className="icon-button"
+              onClick={() => setHistoryOpen(false)}
+            >
               ×
             </button>
           </div>
@@ -381,8 +403,15 @@ function App() {
           <div className="history-list" style={{ marginTop: 16 }}>
             {myHistory?.entries?.length ? (
               myHistory.entries.map((entry, index) => (
-                <div className="history-row" key={`${entry.createdAt}-${index}`}>
-                  <span>{new Date(entry.createdAt).toLocaleTimeString("ko-KR", { hour12: false })}</span>
+                <div
+                  className="history-row"
+                  key={`${entry.createdAt}-${index}`}
+                >
+                  <span>
+                    {new Date(entry.createdAt).toLocaleTimeString("ko-KR", {
+                      hour12: false,
+                    })}
+                  </span>
                   <strong>{formatDuration(entry.durationMs)}</strong>
                 </div>
               ))
@@ -409,7 +438,10 @@ function App() {
             오늘 내 기록
             <span className="drawer-arrow">→</span>
           </button>
-          <button className="drawer-item" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
+          <button
+            className="drawer-item"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          >
             상단으로 이동
             <span className="drawer-arrow">→</span>
           </button>
@@ -438,10 +470,9 @@ function formatDuration(ms) {
   const minutes = Math.floor(safe / 60000);
   const seconds = Math.floor((safe % 60000) / 1000);
   const centiseconds = Math.floor((safe % 1000) / 10);
-  return `${minutes}분 ${String(seconds).padStart(2, "0")}.${String(centiseconds).padStart(
-    2,
-    "0",
-  )}초`;
+  return `${minutes}분 ${String(seconds).padStart(2, "0")}.${String(
+    centiseconds,
+  ).padStart(2, "0")}초`;
 }
 
 export default App;
