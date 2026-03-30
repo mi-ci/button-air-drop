@@ -289,7 +289,7 @@ input {
 }
 
 .winner-block {
-  margin-top: 20px;
+  margin-top: 40px;
   display: grid;
   gap: 10px;
 }
