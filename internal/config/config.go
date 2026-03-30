@@ -55,7 +55,7 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.Auth.CodeTTLMinutes = 10
 	}
 	if cfg.Game.InitialSeconds == 0 {
-		cfg.Game.InitialSeconds = 600
+		cfg.Game.InitialSeconds = 1800
 	}
 	if cfg.DB.Path == "" {
 		cfg.DB.Path = "button-air-drop.db"

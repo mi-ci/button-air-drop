@@ -80,7 +80,7 @@ function App() {
         if (!current.leaderEmail) {
           return {
             ...current,
-            remainingMs: current.initialMs ?? 600000,
+            remainingMs: current.initialMs ?? 1800000,
           };
         }
         return {
@@ -301,7 +301,7 @@ function App() {
         <div className="panel">
           <p className="section-title">Live Timer</p>
           <div className="timer">
-            {formatClock(gameState?.remainingMs ?? 600000)}
+            {formatClock(gameState?.remainingMs ?? 1800000)}
           </div>
           <button
             className="button-airdrop"
