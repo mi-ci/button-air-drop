@@ -281,6 +281,52 @@ input {
   color: rgba(246, 247, 236, 0.68);
 }
 
+.prize-card {
+  display: grid;
+  grid-template-columns: 1fr 124px;
+  gap: 16px;
+  align-items: center;
+  margin-top: 24px;
+  padding: 18px;
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgba(243, 215, 100, 0.16), rgba(255, 255, 255, 0.04)),
+    rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(243, 215, 100, 0.16);
+}
+
+.prize-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.prize-label {
+  color: rgba(246, 247, 236, 0.62);
+  font-size: 0.8rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.prize-copy strong {
+  font-size: 1.4rem;
+  letter-spacing: -0.04em;
+}
+
+.prize-copy p {
+  margin: 0;
+  color: rgba(246, 247, 236, 0.76);
+  line-height: 1.45;
+}
+
+.prize-image {
+  width: 124px;
+  height: 124px;
+  object-fit: cover;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
+}
+
 .ranks,
 .history-list,
 .summary-grid {
@@ -509,6 +555,17 @@ input {
 @media (max-width: 920px) {
   .layout {
     grid-template-columns: 1fr;
+  }
+
+  .prize-card {
+    grid-template-columns: 1fr;
+  }
+
+  .prize-image {
+    width: 100%;
+    max-width: 220px;
+    height: auto;
+    justify-self: center;
   }
 }
 

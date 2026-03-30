@@ -367,7 +367,7 @@ function App() {
       </header>
 
       <section className="hero">
-        <span className="pill">{rankingDateLabel} 우승 상품 : CU 2천원</span>
+        <span className="pill">shared timer button game</span>
       </section>
 
       <section className="layout">
@@ -395,6 +395,19 @@ function App() {
               <strong>남은 횟수 {clickUsage.remaining}</strong>
             </div>
           ) : null}
+
+          <section className="prize-card">
+            <div className="prize-copy">
+              <span className="prize-label">today reward</span>
+              <strong>{formatKoreanDate(rankingDateLabel)}</strong>
+              <p>오늘 1등에게 지급되는 CU 2천원 상품입니다.</p>
+            </div>
+            <img
+              className="prize-image"
+              src="/prize.png"
+              alt="오늘의 우승 상품"
+            />
+          </section>
 
           <div className="meta"></div>
         </div>
@@ -594,6 +607,19 @@ function formatDuration(ms) {
   return `${minutes}분 ${String(seconds).padStart(2, "0")}.${String(
     centiseconds,
   ).padStart(2, "0")}초`;
+}
+
+function formatKoreanDate(dateString) {
+  if (!dateString || dateString === "-") {
+    return "오늘";
+  }
+
+  const [year, month, day] = dateString.split("-");
+  if (!year || !month || !day) {
+    return dateString;
+  }
+
+  return `${year}.${month}.${day}`;
 }
 
 export default App;
