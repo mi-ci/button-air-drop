@@ -70,6 +70,9 @@ func SetupRoutes(cfg *config.Config) (http.Handler, func(context.Context) error,
 		tokenTTL:  time.Duration(cfg.Auth.AccessTokenHours) * time.Hour,
 	}
 
+	distPath := resolveDistPath()
+	staticFiles := http.FileServer(http.Dir(distPath))
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", srv.handleStatus)
 	mux.HandleFunc("/api/auth/request", srv.handleAuthRequest)
@@ -80,7 +83,11 @@ func SetupRoutes(cfg *config.Config) (http.Handler, func(context.Context) error,
 	mux.HandleFunc("/api/rankings/today", srv.handleGameState)
 	mux.HandleFunc("/api/rankings/me", srv.withAuth(srv.handleMyRanking))
 	mux.HandleFunc("/ws", srv.handleWS)
-	mux.HandleFunc("/", handleSPA)
+	mux.Handle("/assets/", staticFiles)
+	mux.Handle("/favicon.ico", staticFiles)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		handleSPA(w, r, distPath)
+	})
 	srv.httpServer = mux
 
 	go srv.broadcastLoop(ctx)
@@ -343,16 +350,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func handleSPA(w http.ResponseWriter, r *http.Request) {
-	distPath := resolveDistPath()
-	requestPath := filepath.Join(distPath, r.URL.Path)
-
-	info, err := os.Stat(requestPath)
-	if err == nil && !info.IsDir() {
-		http.ServeFile(w, r, requestPath)
+func handleSPA(w http.ResponseWriter, r *http.Request, distPath string) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
 		return
 	}
-
 	http.ServeFile(w, r, filepath.Join(distPath, "index.html"))
 }
 
