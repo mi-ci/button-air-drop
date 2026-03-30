@@ -273,7 +273,7 @@ function App() {
             <div className="meta-row">
               <span>현재 리더</span>
               <strong>
-                {gameState?.leaderEmail === session?.email
+                {session?.email && gameState?.leaderEmail === session.email
                   ? session.email
                   : gameState?.leaderMasked || "아직 없음"}
               </strong>
