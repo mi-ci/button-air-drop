@@ -257,6 +257,21 @@ input {
   color: #f3d764;
 }
 
+.usage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.usage-row span {
+  color: rgba(246, 247, 236, 0.68);
+}
+
 .ranks,
 .history-list,
 .summary-grid {

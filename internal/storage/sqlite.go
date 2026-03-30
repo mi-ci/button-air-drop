@@ -55,6 +55,14 @@ CREATE TABLE IF NOT EXISTS current_rounds (
 	expires_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS daily_click_usage (
+	ranking_date TEXT NOT NULL,
+	email TEXT NOT NULL,
+	click_count INTEGER NOT NULL DEFAULT 0,
+	updated_at TEXT NOT NULL,
+	PRIMARY KEY (ranking_date, email)
+);
 `
 
 	_, err := db.Exec(schema)

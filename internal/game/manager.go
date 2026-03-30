@@ -59,7 +59,7 @@ func (m *Manager) Start(ctx context.Context) {
 	}()
 }
 
-func (m *Manager) Click(email string) error {
+func (m *Manager) Click(email string) (bool, error) {
 	now := time.Now().In(m.location)
 
 	m.mu.Lock()
@@ -74,13 +74,13 @@ func (m *Manager) Click(email string) error {
 	}
 
 	if m.leaderEmail == email && now.Before(m.expiresAt) {
-		return nil
+		return false, nil
 	}
 
 	m.leaderEmail = email
 	m.leaderSince = now
 	m.expiresAt = now.Add(m.initial)
-	return m.saveCurrentRoundLocked(now)
+	return true, m.saveCurrentRoundLocked(now)
 }
 
 func (m *Manager) Snapshot() (State, error) {

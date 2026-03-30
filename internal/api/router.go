@@ -38,6 +38,19 @@ type Server struct {
 	httpServer http.Handler
 }
 
+type ClickUsage struct {
+	Used      int  `json:"used"`
+	Limit     int  `json:"limit"`
+	Remaining int  `json:"remaining"`
+	IsAdmin   bool `json:"isAdmin"`
+}
+
+const (
+	defaultDailyClickLimit = 3
+	adminDailyClickLimit   = 1000
+	adminEmail             = "atm7999@naver.com"
+)
+
 type StatusResponse struct {
 	Status   string `json:"status"`
 	Service  string `json:"service"`
@@ -196,19 +209,33 @@ func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	usage, err := s.getClickUsage(email)
+	if err != nil {
+		http.Error(w, "failed to load click usage", http.StatusInternalServerError)
+		return
+	}
+
 	_, _ = s.db.Exec(`DELETE FROM email_codes WHERE email = ?`, email)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"accessToken": token,
+		"accessToken":   token,
 		"expiresInHours": int(s.tokenTTL.Hours()),
-		"email": email,
-		"maskedEmail": game.MaskEmail(email),
+		"email":         email,
+		"maskedEmail":   game.MaskEmail(email),
+		"clickUsage":    usage,
 	})
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, _ *http.Request, email string) {
-	writeJSON(w, http.StatusOK, map[string]string{
+	usage, err := s.getClickUsage(email)
+	if err != nil {
+		http.Error(w, "failed to load click usage", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
 		"email":       email,
 		"maskedEmail": game.MaskEmail(email),
+		"clickUsage":  usage,
 	})
 }
 
@@ -227,19 +254,49 @@ func (s *Server) handleGameClick(w http.ResponseWriter, r *http.Request, email s
 		return
 	}
 
-	if err := s.game.Click(email); err != nil {
+	allowed, usage, err := s.consumeClickIfAllowed(email)
+	if err != nil {
+		http.Error(w, "failed to validate click limit", http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{
+			"error":      "daily click limit reached",
+			"clickUsage": usage,
+		})
+		return
+	}
+
+	changed, err := s.game.Click(email)
+	if err != nil {
 		http.Error(w, "failed to click", http.StatusInternalServerError)
+		return
+	}
+	if !changed {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ignored":    true,
+			"clickUsage": usage,
+		})
+		return
+	}
+
+	usage, err = s.incrementClickUsage(email)
+	if err != nil {
+		http.Error(w, "failed to save click usage", http.StatusInternalServerError)
 		return
 	}
 
 	state, err := s.game.Snapshot()
 	if err != nil {
-		http.Error(w, "failed to load state", http.StatusInternalServerError)
+		http.Error(w, "failed to click", http.StatusInternalServerError)
 		return
 	}
 
 	s.wsHub.broadcastState(state)
-	writeJSON(w, http.StatusOK, state)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"state":      state,
+		"clickUsage": usage,
+	})
 }
 
 func (s *Server) handleMyRanking(w http.ResponseWriter, _ *http.Request, email string) {
@@ -500,6 +557,64 @@ func headerContainsToken(header http.Header, key, token string) bool {
 
 func currentRankingDate(now time.Time, loc *time.Location) string {
 	return now.In(loc).Format("2006-01-02")
+}
+
+func (s *Server) getClickUsage(email string) (ClickUsage, error) {
+	limit := clickLimitForEmail(email)
+	used := 0
+	err := s.db.QueryRow(`
+		SELECT click_count
+		FROM daily_click_usage
+		WHERE ranking_date = ? AND email = ?
+	`, currentRankingDate(time.Now().In(s.location), s.location), email).Scan(&used)
+	if err != nil && err != sql.ErrNoRows {
+		return ClickUsage{}, err
+	}
+	if err == sql.ErrNoRows {
+		used = 0
+	}
+
+	remaining := limit - used
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	return ClickUsage{
+		Used:      used,
+		Limit:     limit,
+		Remaining: remaining,
+		IsAdmin:   strings.EqualFold(email, adminEmail),
+	}, nil
+}
+
+func (s *Server) consumeClickIfAllowed(email string) (bool, ClickUsage, error) {
+	usage, err := s.getClickUsage(email)
+	if err != nil {
+		return false, ClickUsage{}, err
+	}
+	return usage.Used < usage.Limit, usage, nil
+}
+
+func (s *Server) incrementClickUsage(email string) (ClickUsage, error) {
+	now := time.Now().In(s.location)
+	_, err := s.db.Exec(`
+		INSERT INTO daily_click_usage (ranking_date, email, click_count, updated_at)
+		VALUES (?, ?, 1, ?)
+		ON CONFLICT(ranking_date, email) DO UPDATE SET
+			click_count = daily_click_usage.click_count + 1,
+			updated_at = excluded.updated_at
+	`, currentRankingDate(now, s.location), email, now.Format(time.RFC3339Nano))
+	if err != nil {
+		return ClickUsage{}, err
+	}
+	return s.getClickUsage(email)
+}
+
+func clickLimitForEmail(email string) int {
+	if strings.EqualFold(email, adminEmail) {
+		return adminDailyClickLimit
+	}
+	return defaultDailyClickLimit
 }
 
 func resolveDistPath() string {

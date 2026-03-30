@@ -16,6 +16,7 @@ function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [myHistory, setMyHistory] = useState(null);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [clickUsage, setClickUsage] = useState(null);
 
   useEffect(() => {
     fetch("/api/game/state")
@@ -49,6 +50,22 @@ function App() {
     }
     window.localStorage.removeItem("button-air-drop-session");
   }, [session]);
+
+  useEffect(() => {
+    if (!session?.accessToken) {
+      setClickUsage(null);
+      return;
+    }
+
+    fetch("/api/me", {
+      headers: {
+        Authorization: `Bearer ${session.accessToken}`,
+      },
+    })
+      .then((response) => response.json())
+      .then((data) => setClickUsage(data.clickUsage ?? null))
+      .catch(() => {});
+  }, [session?.accessToken]);
 
   useEffect(() => {
     if (!gameState) {
@@ -142,6 +159,7 @@ function App() {
         maskedEmail: data.maskedEmail,
         accessToken: data.accessToken,
       });
+      setClickUsage(data.clickUsage ?? null);
       setLoginOpen(false);
       setCode("");
       setMessage("로그인되었습니다.");
@@ -171,11 +189,24 @@ function App() {
       });
 
       if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        if (errorData?.clickUsage) {
+          setClickUsage(errorData.clickUsage);
+          setMessage(
+            `오늘 버튼 사용을 모두 썼습니다. ${errorData.clickUsage.used}/${errorData.clickUsage.limit}`,
+          );
+          return;
+        }
         throw new Error("버튼 클릭 실패");
       }
 
       const data = await response.json();
-      setGameState(data);
+      if (data.clickUsage) {
+        setClickUsage(data.clickUsage);
+      }
+      if (data.state) {
+        setGameState(data.state);
+      }
       if (isLeader) {
         setMessage("현재 리더가 다시 누른 경우는 무시됩니다.");
       }
@@ -217,6 +248,7 @@ function App() {
 
   function logout() {
     setSession(null);
+    setClickUsage(null);
     setDrawerOpen(false);
     setHistoryOpen(false);
     setMessage("로그아웃되었습니다.");
@@ -273,13 +305,26 @@ function App() {
           </div>
           <button
             className="button-airdrop"
-            disabled={pending || !session?.accessToken}
+            disabled={
+              pending ||
+              !session?.accessToken ||
+              (clickUsage ? clickUsage.remaining <= 0 : false)
+            }
             onClick={clickButton}
           >
             {isLeader
               ? "지금은 내가 리더, 재클릭은 무시됨"
               : "버튼 누르고 현재 리더 되기"}
           </button>
+
+          {session && clickUsage ? (
+            <div className="usage-row">
+              <span>
+                오늘 버튼 사용 {clickUsage.used}/{clickUsage.limit}
+              </span>
+              <strong>남은 횟수 {clickUsage.remaining}</strong>
+            </div>
+          ) : null}
 
           <div className="meta">
           </div>
