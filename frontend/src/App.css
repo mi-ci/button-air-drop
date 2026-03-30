@@ -188,6 +188,7 @@ input {
   line-height: 0.88;
   letter-spacing: -0.08em;
   font-weight: 700;
+  text-align: center;
 }
 
 .button-airdrop {
@@ -259,13 +260,12 @@ input {
 
 .usage-row {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 12px;
   margin-top: 14px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.04);
+  text-align: center;
 }
 
 .usage-row span {

@@ -319,15 +319,11 @@ function App() {
 
           {session && clickUsage ? (
             <div className="usage-row">
-              <span>
-                오늘 버튼 사용 {clickUsage.used}/{clickUsage.limit}
-              </span>
               <strong>남은 횟수 {clickUsage.remaining}</strong>
             </div>
           ) : null}
 
-          <div className="meta">
-          </div>
+          <div className="meta"></div>
 
           {message ? <div className="message">{message}</div> : null}
         </div>
