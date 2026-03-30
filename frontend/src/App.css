@@ -302,20 +302,23 @@ input {
 }
 
 .modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
   width: min(100%, 460px);
   background: rgba(19, 26, 21, 0.97);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 24px;
   padding: 22px;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
-  transform: translateY(24px) scale(0.97);
+  transform: translate(-50%, calc(-50% + 24px)) scale(0.97);
   opacity: 0;
   transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.32s ease;
   pointer-events: none;
 }
 
 .modal.is-open {
-  transform: translateY(0) scale(1);
+  transform: translate(-50%, -50%) scale(1);
   opacity: 1;
   pointer-events: auto;
 }

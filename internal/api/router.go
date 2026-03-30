@@ -249,6 +249,7 @@ func (s *Server) handleMyRanking(w http.ResponseWriter, _ *http.Request, email s
 		FROM ranking_entries
 		WHERE ranking_date = ? AND email = ?
 		ORDER BY duration_ms DESC, created_at ASC
+		LIMIT 10
 	`, currentRankingDate(now, s.location), email)
 	if err != nil {
 		http.Error(w, "failed to load personal rankings", http.StatusInternalServerError)
