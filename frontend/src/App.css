@@ -28,26 +28,6 @@ input {
 
 .loading-screen {
   min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 20px;
-}
-
-.loading-card {
-  display: grid;
-  gap: 14px;
-  justify-items: start;
-  min-width: min(100%, 320px);
-  padding: 24px;
-  border-radius: 24px;
-  background: rgba(17, 24, 19, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.18);
-}
-
-.loading-card strong {
-  font-size: 1.4rem;
-  letter-spacing: -0.04em;
 }
 
 .app-shell {

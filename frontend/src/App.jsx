@@ -230,14 +230,7 @@ function App() {
   }
 
   if (initialLoading && !gameState) {
-    return (
-      <main className="loading-screen">
-        <div className="loading-card">
-          <span className="pill">button-air-drop</span>
-          <strong>게임 상태 불러오는 중</strong>
-        </div>
-      </main>
-    );
+    return <main className="loading-screen" />;
   }
 
   return (
