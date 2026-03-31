@@ -583,15 +583,21 @@ function App() {
             {myHistory?.entries?.length ? (
               myHistory.entries.map((entry, index) => (
                 <div
-                  className="history-row"
+                  className={`history-row ${entry.currentRank === 1 ? "is-champion" : ""}`}
                   key={`${entry.createdAt}-${index}`}
                 >
-                  <span>
-                    {entry.currentRank ? `#${entry.currentRank} ` : ""}
-                    {new Date(entry.createdAt).toLocaleTimeString("ko-KR", {
-                      hour12: false,
-                    })}
-                  </span>
+                  <div className="rank-label">
+                    <span className={`rank-badge rank-${entry.currentRank ?? 0}`}>
+                      {entry.currentRank === 1
+                        ? "TROPHY"
+                        : `${entry.currentRank ?? "-"}위`}
+                    </span>
+                    <span className="rank-name">
+                      {new Date(entry.createdAt).toLocaleTimeString("ko-KR", {
+                        hour12: false,
+                      })}
+                    </span>
+                  </div>
                   <strong>{formatDuration(entry.durationMs)}</strong>
                 </div>
               ))
