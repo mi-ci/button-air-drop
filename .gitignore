@@ -20,4 +20,5 @@ frontend/dist/
 .env.*
 !.env.example
 *.yml
+!config.example.yml
 *.png

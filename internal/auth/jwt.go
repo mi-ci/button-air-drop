@@ -12,13 +12,15 @@ import (
 )
 
 type Claims struct {
-	Subject string `json:"sub"`
-	Email   string `json:"email"`
-	Exp     int64  `json:"exp"`
-	Iat     int64  `json:"iat"`
+	Subject  string `json:"sub"`
+	UserID   string `json:"uid"`
+	Email    string `json:"email,omitempty"`
+	Nickname string `json:"nickname,omitempty"`
+	Exp      int64  `json:"exp"`
+	Iat      int64  `json:"iat"`
 }
 
-func SignToken(secret []byte, email string, expiresAt time.Time) (string, error) {
+func SignToken(secret []byte, userID, email, nickname string, expiresAt time.Time) (string, error) {
 	headerJSON, err := json.Marshal(map[string]string{
 		"alg": "HS256",
 		"typ": "JWT",
@@ -28,10 +30,12 @@ func SignToken(secret []byte, email string, expiresAt time.Time) (string, error)
 	}
 
 	claimsJSON, err := json.Marshal(Claims{
-		Subject: email,
-		Email:   email,
-		Exp:     expiresAt.Unix(),
-		Iat:     time.Now().Unix(),
+		Subject:  userID,
+		UserID:   userID,
+		Email:    email,
+		Nickname: nickname,
+		Exp:      expiresAt.Unix(),
+		Iat:      time.Now().Unix(),
 	})
 	if err != nil {
 		return "", err
@@ -84,8 +88,8 @@ func ParseToken(secret []byte, token string) (*Claims, error) {
 	if time.Now().Unix() > claims.Exp {
 		return nil, errors.New("token expired")
 	}
-	if claims.Email == "" {
-		return nil, errors.New("missing email")
+	if claims.UserID == "" {
+		return nil, errors.New("missing user id")
 	}
 
 	return &claims, nil

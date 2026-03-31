@@ -70,6 +70,7 @@ input {
 
 .ghost-button,
 .login-button,
+.kakao-button,
 .profile-button,
 .primary-button,
 .button-airdrop {
@@ -78,6 +79,7 @@ input {
 }
 
 .login-button,
+.kakao-button,
 .profile-button,
 .ghost-button {
   min-height: 46px;
@@ -88,6 +90,12 @@ input {
 .login-button {
   color: #111713;
   background: linear-gradient(135deg, #f4dd6c 0%, #c6ff87 100%);
+  font-weight: 700;
+}
+
+.kakao-button {
+  color: #191600;
+  background: #fee500;
   font-weight: 700;
 }
 
@@ -210,7 +218,8 @@ input {
 .button-airdrop:disabled,
 .primary-button:disabled,
 .ghost-button:disabled,
-.login-button:disabled {
+.login-button:disabled,
+.kakao-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -446,6 +455,21 @@ input {
   background: rgba(255, 255, 255, 0.04);
   color: #f6f7ec;
   padding: 14px 16px;
+}
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: rgba(246, 247, 236, 0.8);
+  font-size: 0.94rem;
+  line-height: 1.5;
+}
+
+.check-row input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
 }
 
 .modal-actions {

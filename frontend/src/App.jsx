@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import "./App.css";
 
 function App() {
-  const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
   const [nickname, setNickname] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactEmailConsent, setContactEmailConsent] = useState(false);
   const [session, setSession] = useState(() => {
     const raw = window.localStorage.getItem("button-air-drop-session");
     return raw ? JSON.parse(raw) : null;
@@ -12,13 +12,32 @@ function App() {
   const [gameState, setGameState] = useState(null);
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
-  const [loginOpen, setLoginOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [myHistory, setMyHistory] = useState(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [clickUsage, setClickUsage] = useState(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const accessToken = params.get("accessToken");
+    const loginError = params.get("loginError");
+
+    if (accessToken) {
+      setSession({
+        userId: "",
+        email: params.get("email") ?? "",
+        nickname: params.get("nickname") ?? "",
+        accessToken,
+      });
+      setMessage("카카오 로그인되었습니다.");
+      window.history.replaceState({}, "", "/");
+    } else if (loginError) {
+      setMessage("카카오 로그인을 완료하지 못했습니다.");
+      window.history.replaceState({}, "", "/");
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -123,20 +142,30 @@ function App() {
         Authorization: `Bearer ${session.accessToken}`,
       },
     })
-      .then((response) => response.json())
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("load-me-failed");
+        }
+        return response.json();
+      })
       .then((data) => {
         setClickUsage(data.clickUsage ?? null);
+        setContactEmail(data.contactEmail ?? "");
+        setContactEmailConsent(Boolean(data.contactEmailConsent));
         setSession((current) =>
           current
             ? {
                 ...current,
-                email: data.email ?? current.email,
+                userId: data.userId ?? current.userId,
+                email: data.contactEmail ?? current.email,
                 nickname: data.nickname ?? current.nickname,
               }
             : current,
         );
       })
-      .catch(() => {});
+      .catch(() => {
+        setSession(null);
+      });
   }, [session?.accessToken]);
 
   useEffect(() => {
@@ -168,7 +197,6 @@ function App() {
   useEffect(() => {
     function handleKeydown(event) {
       if (event.key === "Escape") {
-        setLoginOpen(false);
         setDrawerOpen(false);
         setHistoryOpen(false);
         setProfileOpen(false);
@@ -191,74 +219,21 @@ function App() {
     return () => window.clearTimeout(timeout);
   }, [message]);
 
-  const isLeader = session?.email && gameState?.leaderEmail === session.email;
+  const isLeader =
+    session?.userId && gameState?.leaderEmail === session.userId;
   const leaderboard = gameState?.leaderboard ?? [];
   const yesterdayWinner = gameState?.yesterdayWinner ?? null;
   const rankingDateLabel = gameState?.rankingDate ?? "-";
-  const overlayOpen = loginOpen || drawerOpen || historyOpen || profileOpen;
+  const overlayOpen = drawerOpen || historyOpen || profileOpen;
 
-  async function requestCode(event) {
-    event.preventDefault();
-    setPending(true);
-    setMessage("");
-
-    try {
-      const response = await fetch("/api/auth/request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-
-      if (!response.ok) {
-        throw new Error("인증코드 요청 실패");
-      }
-
-      const data = await response.json();
-      setMessage(`개발용 인증코드: ${data.devCode}`);
-    } catch {
-      setMessage("인증코드를 요청하지 못했습니다.");
-    } finally {
-      setPending(false);
-    }
-  }
-
-  async function verifyCode(event) {
-    event.preventDefault();
-    setPending(true);
-    setMessage("");
-
-    try {
-      const response = await fetch("/api/auth/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, code }),
-      });
-
-      if (!response.ok) {
-        throw new Error("인증 실패");
-      }
-
-      const data = await response.json();
-      setSession({
-        email: data.email,
-        nickname: data.nickname,
-        accessToken: data.accessToken,
-      });
-      setClickUsage(data.clickUsage ?? null);
-      setLoginOpen(false);
-      setCode("");
-      setMessage("로그인되었습니다.");
-    } catch {
-      setMessage("인증코드가 올바르지 않거나 만료되었습니다.");
-    } finally {
-      setPending(false);
-    }
+  function startKakaoLogin() {
+    window.location.href = "/api/auth/kakao/start";
   }
 
   async function clickButton() {
     if (!session?.accessToken) {
-      setLoginOpen(true);
-      setMessage("먼저 로그인해야 합니다.");
+      setMessage("먼저 카카오 로그인해야 합니다.");
+      startKakaoLogin();
       return;
     }
 
@@ -304,7 +279,7 @@ function App() {
 
   async function openMyHistory() {
     if (!session?.accessToken) {
-      setLoginOpen(true);
+      startKakaoLogin();
       return;
     }
 
@@ -333,6 +308,7 @@ function App() {
 
   function openProfile() {
     setNickname(session?.nickname ?? "");
+    setContactEmail(contactEmail || session?.email || "");
     setProfileOpen(true);
     setDrawerOpen(false);
   }
@@ -353,7 +329,11 @@ function App() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.accessToken}`,
         },
-        body: JSON.stringify({ nickname }),
+        body: JSON.stringify({
+          nickname,
+          contactEmail,
+          contactEmailConsent,
+        }),
       });
 
       if (!response.ok) {
@@ -368,18 +348,21 @@ function App() {
         current
           ? {
               ...current,
+              email: data.contactEmail ?? "",
               nickname: data.nickname,
             }
           : current,
       );
+      setContactEmail(data.contactEmail ?? "");
+      setContactEmailConsent(Boolean(data.contactEmailConsent));
       setProfileOpen(false);
-      setMessage("닉네임이 저장되었습니다.");
+      setMessage("마이페이지가 저장되었습니다.");
     } catch (error) {
       if (error.message === "nickname-taken") {
         setMessage("이미 사용 중인 닉네임입니다.");
         return;
       }
-      setMessage("닉네임을 저장하지 못했습니다.");
+      setMessage("마이페이지를 저장하지 못했습니다.");
     } finally {
       setPending(false);
     }
@@ -395,7 +378,6 @@ function App() {
   }
 
   function closeOverlay() {
-    setLoginOpen(false);
     setDrawerOpen(false);
     setHistoryOpen(false);
     setProfileOpen(false);
@@ -421,7 +403,7 @@ function App() {
               className="profile-button"
               onClick={() => setDrawerOpen((value) => !value)}
             >
-              {session.nickname || session.email}
+              {session.nickname || "player"}
               <span className={`burger ${drawerOpen ? "is-open" : ""}`}>
                 <span />
                 <span />
@@ -429,8 +411,8 @@ function App() {
               </span>
             </button>
           ) : (
-            <button className="login-button" onClick={() => setLoginOpen(true)}>
-              로그인
+            <button className="kakao-button" onClick={startKakaoLogin}>
+              카카오 로그인
             </button>
           )}
         </div>
@@ -519,52 +501,6 @@ function App() {
 
       <div className="modal-shell">
         <div
-          className={`modal ${loginOpen ? "is-open" : ""}`}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <div className="modal-header">
-            <div>
-              <h2>이메일 로그인</h2>
-              <p>비밀번호 없이 이메일 인증코드로 로그인합니다.</p>
-            </div>
-            <button className="icon-button" onClick={() => setLoginOpen(false)}>
-              ×
-            </button>
-          </div>
-
-          <form className="auth-form">
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="email@example.com"
-            />
-            <input
-              type="text"
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              placeholder="인증코드 6자리"
-            />
-            <div className="modal-actions">
-              <button
-                className="primary-button"
-                disabled={pending}
-                onClick={requestCode}
-              >
-                인증코드 요청
-              </button>
-              <button
-                className="secondary-button"
-                disabled={pending}
-                onClick={verifyCode}
-              >
-                코드 확인 후 로그인
-              </button>
-            </div>
-          </form>
-        </div>
-
-        <div
           className={`modal ${historyOpen ? "is-open" : ""}`}
           onClick={(event) => event.stopPropagation()}
         >
@@ -591,8 +527,8 @@ function App() {
               <strong>{session?.nickname || myHistory?.nickname || "-"}</strong>
             </div>
             <div className="summary-row">
-              <span>이메일</span>
-              <strong>{session?.email || myHistory?.email || "-"}</strong>
+              <span>연락 이메일</span>
+              <strong>{myHistory?.contactEmail || session?.email || "-"}</strong>
             </div>
             <div className="summary-row">
               <span>시도 횟수</span>
@@ -629,7 +565,7 @@ function App() {
           <div className="modal-header">
             <div>
               <h2>마이페이지</h2>
-              <p>공개 표시용 닉네임을 수정할 수 있습니다.</p>
+              <p>닉네임과 우승 안내용 이메일을 관리합니다.</p>
             </div>
             <button className="icon-button" onClick={() => setProfileOpen(false)}>
               ×
@@ -637,13 +573,31 @@ function App() {
           </div>
 
           <form className="auth-form" onSubmit={saveProfile}>
-            <input type="email" value={session?.email ?? ""} disabled />
             <input
               type="text"
               value={nickname}
               onChange={(event) => setNickname(event.target.value)}
               placeholder="닉네임 2~12자"
             />
+            <input
+              type="email"
+              value={contactEmail}
+              onChange={(event) => setContactEmail(event.target.value)}
+              placeholder="우승 안내 받을 이메일"
+            />
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={contactEmailConsent}
+                onChange={(event) =>
+                  setContactEmailConsent(event.target.checked)
+                }
+              />
+              <span>
+                우승 안내 및 상품 발송 관련 연락을 위해 이메일을 수집·이용하는
+                데 동의합니다.
+              </span>
+            </label>
             <div className="modal-actions">
               <button className="primary-button" disabled={pending} type="submit">
                 저장
@@ -657,7 +611,7 @@ function App() {
         <div className="drawer-header">
           <div className="drawer-user">
             <strong>{session?.nickname || "-"}</strong>
-            <span>{session?.email || "오늘 버튼 게임 메뉴"}</span>
+            <span>{session?.email || "연락 이메일 미등록"}</span>
           </div>
           <button className="icon-button" onClick={() => setDrawerOpen(false)}>
             ×

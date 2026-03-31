@@ -11,6 +11,7 @@ type Config struct {
 	Auth   AuthConfig   `yaml:"auth"`
 	Game   GameConfig   `yaml:"game"`
 	DB     DBConfig     `yaml:"db"`
+	Kakao  KakaoConfig  `yaml:"kakao"`
 }
 
 type ServerConfig struct {
@@ -29,6 +30,13 @@ type GameConfig struct {
 
 type DBConfig struct {
 	Path string `yaml:"path"`
+}
+
+type KakaoConfig struct {
+	RestAPIKey   string `yaml:"rest_api_key"`
+	ClientSecret string `yaml:"client_secret"`
+	RedirectURI  string `yaml:"redirect_uri"`
+	Scope        string `yaml:"scope"`
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -59,6 +67,18 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.DB.Path == "" {
 		cfg.DB.Path = "button-air-drop.db"
+	}
+	if cfg.Kakao.RestAPIKey == "" {
+		cfg.Kakao.RestAPIKey = os.Getenv("KAKAO_REST_API_KEY")
+	}
+	if cfg.Kakao.ClientSecret == "" {
+		cfg.Kakao.ClientSecret = os.Getenv("KAKAO_CLIENT_SECRET")
+	}
+	if cfg.Kakao.RedirectURI == "" {
+		cfg.Kakao.RedirectURI = os.Getenv("KAKAO_REDIRECT_URI")
+	}
+	if cfg.Kakao.Scope == "" {
+		cfg.Kakao.Scope = "account_email"
 	}
 
 	return &cfg, nil

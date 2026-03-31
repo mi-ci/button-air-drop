@@ -4,19 +4,23 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha1"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/rand/v2"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +43,7 @@ type Server struct {
 	httpServer  http.Handler
 	clickMu     sync.Mutex
 	lastClickAt map[string]time.Time
+	httpClient  *http.Client
 }
 
 type ClickUsage struct {
@@ -88,12 +93,13 @@ func SetupRoutes(cfg *config.Config) (http.Handler, func(context.Context) error,
 		codeTTL:     time.Duration(cfg.Auth.CodeTTLMinutes) * time.Minute,
 		tokenTTL:    time.Duration(cfg.Auth.AccessTokenHours) * time.Hour,
 		lastClickAt: map[string]time.Time{},
+		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", srv.handleStatus)
-	mux.HandleFunc("/api/auth/request", srv.handleAuthRequest)
-	mux.HandleFunc("/api/auth/verify", srv.handleAuthVerify)
+	mux.HandleFunc("/api/auth/kakao/start", srv.handleKakaoStart)
+	mux.HandleFunc("/api/auth/kakao/callback", srv.handleKakaoCallback)
 	mux.HandleFunc("/api/me", srv.withAuth(srv.handleMe))
 	mux.HandleFunc("/api/me/profile", srv.withAuth(srv.handleProfileUpdate))
 	mux.HandleFunc("/api/game/state", srv.handleGameState)
@@ -123,174 +129,119 @@ func (s *Server) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func (s *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+func (s *Server) handleKakaoStart(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Kakao.RestAPIKey == "" || s.cfg.Kakao.RedirectURI == "" {
+		http.Error(w, "kakao login is not configured", http.StatusInternalServerError)
+		return
+	}
+
+	state := s.newOAuthState()
+	http.SetCookie(w, &http.Cookie{
+		Name:     "button_air_drop_oauth_state",
+		Value:    state,
+		Path:     "/",
+		MaxAge:   600,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	values := url.Values{}
+	values.Set("response_type", "code")
+	values.Set("client_id", s.cfg.Kakao.RestAPIKey)
+	values.Set("redirect_uri", s.cfg.Kakao.RedirectURI)
+	values.Set("state", state)
+	if strings.TrimSpace(s.cfg.Kakao.Scope) != "" {
+		values.Set("scope", s.cfg.Kakao.Scope)
+	}
+
+	http.Redirect(w, r, "https://kauth.kakao.com/oauth/authorize?"+values.Encode(), http.StatusFound)
+}
+
+func (s *Server) handleKakaoCallback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	var req struct {
-		Email string `json:"email"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if errorCode := strings.TrimSpace(r.URL.Query().Get("error")); errorCode != "" {
+		s.redirectLoginResult(w, r, "", "", "", "kakao-login-cancelled")
 		return
 	}
 
-	email := strings.TrimSpace(strings.ToLower(req.Email))
-	if !strings.Contains(email, "@") || len(email) < 5 {
-		http.Error(w, "invalid email", http.StatusBadRequest)
+	if !s.validOAuthState(r) {
+		s.redirectLoginResult(w, r, "", "", "", "invalid-oauth-state")
 		return
 	}
 
-	clientIP := clientIPFromRequest(r)
-	if clientIP == "" {
-		http.Error(w, "invalid client ip", http.StatusBadRequest)
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	if code == "" {
+		s.redirectLoginResult(w, r, "", "", "", "missing-kakao-code")
 		return
 	}
 
-	allowed, retryAfter, err := s.allowAuthRequest(clientIP)
+	kakaoAccessToken, err := s.exchangeKakaoCode(code)
 	if err != nil {
-		http.Error(w, "failed to validate auth request limit", http.StatusInternalServerError)
-		return
-	}
-	if !allowed {
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{
-			"error":      "too many auth requests",
-			"retryAfter": int(retryAfter.Seconds()),
-		})
+		log.Printf("kakao token exchange failed: %v", err)
+		s.redirectLoginResult(w, r, "", "", "", "kakao-token-exchange-failed")
 		return
 	}
 
-	code := fmt.Sprintf("%06d", rand.IntN(1000000))
-	now := time.Now().In(s.location)
-	expiresAt := now.Add(s.codeTTL)
-
-	if _, err := s.db.Exec(`DELETE FROM email_codes WHERE email = ?`, email); err != nil {
-		http.Error(w, "failed to save code", http.StatusInternalServerError)
-		return
-	}
-	if _, err := s.db.Exec(`
-		INSERT INTO email_codes (email, code, expires_at, created_at)
-		VALUES (?, ?, ?, ?)
-	`, email, code, expiresAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano)); err != nil {
-		http.Error(w, "failed to save code", http.StatusInternalServerError)
+	kakaoUser, err := s.fetchKakaoUser(kakaoAccessToken)
+	if err != nil {
+		log.Printf("kakao user fetch failed: %v", err)
+		s.redirectLoginResult(w, r, "", "", "", "kakao-user-fetch-failed")
 		return
 	}
 
-	if err := s.logAuthRequest(clientIP, now); err != nil {
-		http.Error(w, "failed to record auth request", http.StatusInternalServerError)
+	user, err := s.ensureKakaoUser(kakaoUser)
+	if err != nil {
+		log.Printf("kakao user ensure failed: %v", err)
+		s.redirectLoginResult(w, r, "", "", "", "kakao-user-save-failed")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":          true,
-		"email":       email,
-		"expiresAt":   expiresAt.Format(time.RFC3339),
-		"devCode":     code,
-		"message":     "Email sending is not connected yet. Use the returned devCode for now.",
-		"maskedEmail": game.MaskEmail(email),
-	})
+	token, err := auth.SignToken(s.jwtSecret, user.UserID, user.ContactEmail, user.Nickname, time.Now().Add(s.tokenTTL))
+	if err != nil {
+		s.redirectLoginResult(w, r, "", "", "", "token-sign-failed")
+		return
+	}
+
+	s.redirectLoginResult(w, r, token, user.Nickname, user.ContactEmail, "")
 }
 
-func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req struct {
-		Email string `json:"email"`
-		Code  string `json:"code"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
-		return
-	}
-
-	email := strings.TrimSpace(strings.ToLower(req.Email))
-	code := strings.TrimSpace(req.Code)
-
-	var savedCode string
-	var expiresRaw string
-	err := s.db.QueryRow(`
-		SELECT code, expires_at
-		FROM email_codes
-		WHERE email = ?
-		ORDER BY created_at DESC
-		LIMIT 1
-	`, email).Scan(&savedCode, &expiresRaw)
-	if err != nil {
-		http.Error(w, "code not found", http.StatusUnauthorized)
-		return
-	}
-
-	expiresAt, err := time.Parse(time.RFC3339Nano, expiresRaw)
-	if err != nil {
-		http.Error(w, "invalid code expiry", http.StatusInternalServerError)
-		return
-	}
-	if time.Now().After(expiresAt) || code != savedCode {
-		http.Error(w, "invalid or expired code", http.StatusUnauthorized)
-		return
-	}
-
-	token, err := auth.SignToken(s.jwtSecret, email, time.Now().Add(s.tokenTTL))
-	if err != nil {
-		http.Error(w, "failed to sign token", http.StatusInternalServerError)
-		return
-	}
-
-	user, err := s.ensureUser(email)
-	if err != nil {
-		http.Error(w, "failed to prepare user", http.StatusInternalServerError)
-		return
-	}
-
-	usage, err := s.getClickUsage(email)
-	if err != nil {
-		http.Error(w, "failed to load click usage", http.StatusInternalServerError)
-		return
-	}
-
-	_, _ = s.db.Exec(`DELETE FROM email_codes WHERE email = ?`, email)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"accessToken":    token,
-		"expiresInHours": int(s.tokenTTL.Hours()),
-		"email":          email,
-		"nickname":       user.Nickname,
-		"clickUsage":     usage,
-	})
-}
-
-func (s *Server) handleMe(w http.ResponseWriter, _ *http.Request, email string) {
-	user, err := s.ensureUser(email)
+func (s *Server) handleMe(w http.ResponseWriter, _ *http.Request, userID string) {
+	user, err := s.lookupUser(userID)
 	if err != nil {
 		http.Error(w, "failed to load user", http.StatusInternalServerError)
 		return
 	}
 
-	usage, err := s.getClickUsage(email)
+	usage, err := s.getClickUsage(userID)
 	if err != nil {
 		http.Error(w, "failed to load click usage", http.StatusInternalServerError)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"email":      email,
-		"nickname":   user.Nickname,
-		"clickUsage": usage,
+		"userId":              user.UserID,
+		"email":               user.ContactEmail,
+		"nickname":            user.Nickname,
+		"contactEmail":        user.ContactEmail,
+		"contactEmailConsent": user.ContactEmailConsent,
+		"clickUsage":          usage,
 	})
 }
 
-func (s *Server) handleProfileUpdate(w http.ResponseWriter, r *http.Request, email string) {
+func (s *Server) handleProfileUpdate(w http.ResponseWriter, r *http.Request, userID string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	var req struct {
-		Nickname string `json:"nickname"`
+		Nickname            string `json:"nickname"`
+		ContactEmail        string `json:"contactEmail"`
+		ContactEmailConsent bool   `json:"contactEmailConsent"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
@@ -303,7 +254,17 @@ func (s *Server) handleProfileUpdate(w http.ResponseWriter, r *http.Request, ema
 		return
 	}
 
-	if _, err := s.ensureUser(email); err != nil {
+	contactEmail := strings.TrimSpace(strings.ToLower(req.ContactEmail))
+	if contactEmail != "" && (!strings.Contains(contactEmail, "@") || len(contactEmail) < 5) {
+		http.Error(w, "invalid contact email", http.StatusBadRequest)
+		return
+	}
+	if contactEmail != "" && !req.ContactEmailConsent {
+		http.Error(w, "contact email consent required", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := s.lookupUser(userID); err != nil {
 		http.Error(w, "failed to load user", http.StatusInternalServerError)
 		return
 	}
@@ -311,9 +272,9 @@ func (s *Server) handleProfileUpdate(w http.ResponseWriter, r *http.Request, ema
 	now := time.Now().In(s.location).Format(time.RFC3339Nano)
 	_, err := s.db.Exec(`
 		UPDATE users
-		SET nickname = ?, updated_at = ?
+		SET nickname = ?, contact_email = ?, contact_email_consent = ?, contact_email_consent_at = ?, updated_at = ?
 		WHERE email = ?
-	`, nickname, now, email)
+	`, nickname, contactEmail, boolToInt(req.ContactEmailConsent), consentTimestamp(contactEmail, req.ContactEmailConsent, now), now, userID)
 	if err != nil {
 		if isUniqueConstraintError(err) {
 			http.Error(w, "nickname already taken", http.StatusConflict)
@@ -324,8 +285,11 @@ func (s *Server) handleProfileUpdate(w http.ResponseWriter, r *http.Request, ema
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"email":    email,
-		"nickname": nickname,
+		"userId":              userID,
+		"email":               contactEmail,
+		"nickname":            nickname,
+		"contactEmail":        contactEmail,
+		"contactEmailConsent": req.ContactEmailConsent,
 	})
 }
 
@@ -338,13 +302,13 @@ func (s *Server) handleGameState(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, state)
 }
 
-func (s *Server) handleGameClick(w http.ResponseWriter, r *http.Request, email string) {
+func (s *Server) handleGameClick(w http.ResponseWriter, r *http.Request, userID string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	allowed, usage, err := s.consumeClickIfAllowed(email)
+	allowed, usage, err := s.consumeClickIfAllowed(userID)
 	if err != nil {
 		http.Error(w, "failed to validate click limit", http.StatusInternalServerError)
 		return
@@ -357,7 +321,7 @@ func (s *Server) handleGameClick(w http.ResponseWriter, r *http.Request, email s
 		return
 	}
 
-	if ok, retryAfter := s.allowClickNow(email); !ok {
+	if ok, retryAfter := s.allowClickNow(userID); !ok {
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{
 			"error":      "click cooldown active",
 			"retryAfter": retryAfter.Milliseconds(),
@@ -366,7 +330,7 @@ func (s *Server) handleGameClick(w http.ResponseWriter, r *http.Request, email s
 		return
 	}
 
-	changed, err := s.game.Click(email)
+	changed, err := s.game.Click(userID)
 	if err != nil {
 		http.Error(w, "failed to click", http.StatusInternalServerError)
 		return
@@ -379,7 +343,7 @@ func (s *Server) handleGameClick(w http.ResponseWriter, r *http.Request, email s
 		return
 	}
 
-	usage, err = s.incrementClickUsage(email)
+	usage, err = s.incrementClickUsage(userID)
 	if err != nil {
 		http.Error(w, "failed to save click usage", http.StatusInternalServerError)
 		return
@@ -398,7 +362,7 @@ func (s *Server) handleGameClick(w http.ResponseWriter, r *http.Request, email s
 	})
 }
 
-func (s *Server) handleMyRanking(w http.ResponseWriter, _ *http.Request, email string) {
+func (s *Server) handleMyRanking(w http.ResponseWriter, _ *http.Request, userID string) {
 	now := time.Now().In(s.location)
 	rows, err := s.db.Query(`
 		SELECT duration_ms, created_at
@@ -406,7 +370,7 @@ func (s *Server) handleMyRanking(w http.ResponseWriter, _ *http.Request, email s
 		WHERE ranking_date = ? AND email = ?
 		ORDER BY duration_ms DESC, created_at ASC
 		LIMIT 10
-	`, currentRankingDate(now, s.location), email)
+	`, currentRankingDate(now, s.location), userID)
 	if err != nil {
 		http.Error(w, "failed to load personal rankings", http.StatusInternalServerError)
 		return
@@ -435,9 +399,17 @@ func (s *Server) handleMyRanking(w http.ResponseWriter, _ *http.Request, email s
 		return
 	}
 
+	user, err := s.lookupUser(userID)
+	if err != nil {
+		http.Error(w, "failed to load user", http.StatusInternalServerError)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
-		"email":        email,
-		"nickname":     s.lookupNickname(email),
+		"userId":       userID,
+		"email":        user.ContactEmail,
+		"nickname":     user.Nickname,
+		"contactEmail": user.ContactEmail,
 		"rankingDate":  currentRankingDate(now, s.location),
 		"attemptCount": len(entries),
 		"bestMs":       bestMS,
@@ -459,7 +431,7 @@ func (s *Server) withAuth(next func(http.ResponseWriter, *http.Request, string))
 			return
 		}
 
-		next(w, r, claims.Email)
+		next(w, r, claims.UserID)
 	}
 }
 
@@ -785,8 +757,28 @@ func (s *Server) logAuthRequest(ip string, now time.Time) error {
 }
 
 type userProfile struct {
-	Email    string
-	Nickname string
+	UserID              string
+	Nickname            string
+	LoginEmail          string
+	ContactEmail        string
+	ContactEmailConsent bool
+}
+
+type kakaoTokenResponse struct {
+	AccessToken string `json:"access_token"`
+}
+
+type kakaoUserInfo struct {
+	ID           int64 `json:"id"`
+	KakaoAccount struct {
+		Email   string `json:"email"`
+		Profile struct {
+			Nickname string `json:"nickname"`
+		} `json:"profile"`
+	} `json:"kakao_account"`
+	Properties struct {
+		Nickname string `json:"nickname"`
+	} `json:"properties"`
 }
 
 var nicknamePattern = regexp.MustCompile(`^[A-Za-z0-9가-힣]{2,12}$`)
@@ -799,25 +791,51 @@ var nicknameNouns = []string{
 	"Rocket", "Tiger", "Button", "Cloud", "Falcon", "Nova", "Pixel", "River",
 }
 
-func (s *Server) ensureUser(email string) (userProfile, error) {
+func (s *Server) lookupUser(userID string) (userProfile, error) {
 	var user userProfile
-	err := s.db.QueryRow(`SELECT email, nickname FROM users WHERE email = ?`, email).Scan(&user.Email, &user.Nickname)
-	if err == nil {
-		return user, nil
-	}
-	if err != sql.ErrNoRows {
+	var consentInt int
+	err := s.db.QueryRow(`
+		SELECT email, nickname, login_email, contact_email, contact_email_consent
+		FROM users
+		WHERE email = ?
+	`, userID).Scan(&user.UserID, &user.Nickname, &user.LoginEmail, &user.ContactEmail, &consentInt)
+	if err != nil {
 		return user, err
 	}
+	user.ContactEmailConsent = consentInt == 1
+	return user, nil
+}
 
+func (s *Server) ensureKakaoUser(kakaoUser kakaoUserInfo) (userProfile, error) {
+	kakaoID := strconv.FormatInt(kakaoUser.ID, 10)
+	loginEmail := strings.TrimSpace(strings.ToLower(kakaoUser.KakaoAccount.Email))
+
+	var existingUserID string
+	err := s.db.QueryRow(`SELECT email FROM users WHERE kakao_id = ?`, kakaoID).Scan(&existingUserID)
+	if err == nil {
+		if loginEmail != "" {
+			_, _ = s.db.Exec(`UPDATE users SET login_email = ?, updated_at = ? WHERE email = ?`, loginEmail, time.Now().In(s.location).Format(time.RFC3339Nano), existingUserID)
+		}
+		return s.lookupUser(existingUserID)
+	}
+	if err != sql.ErrNoRows {
+		return userProfile{}, err
+	}
+
+	userID := "kakao:" + kakaoID
 	now := time.Now().In(s.location).Format(time.RFC3339Nano)
 	for range 64 {
 		nickname := randomNickname()
 		_, insertErr := s.db.Exec(`
-			INSERT INTO users (email, nickname, created_at, updated_at)
-			VALUES (?, ?, ?, ?)
-		`, email, nickname, now, now)
+			INSERT INTO users (email, nickname, created_at, updated_at, auth_provider, kakao_id, login_email)
+			VALUES (?, ?, ?, ?, 'kakao', ?, ?)
+		`, userID, nickname, now, now, kakaoID, loginEmail)
 		if insertErr == nil {
-			return userProfile{Email: email, Nickname: nickname}, nil
+			return userProfile{
+				UserID:     userID,
+				Nickname:   nickname,
+				LoginEmail: loginEmail,
+			}, nil
 		}
 		if !isUniqueConstraintError(insertErr) {
 			return userProfile{}, insertErr
@@ -827,13 +845,120 @@ func (s *Server) ensureUser(email string) (userProfile, error) {
 	return userProfile{}, errors.New("failed to generate unique nickname")
 }
 
-func (s *Server) lookupNickname(email string) string {
-	var nickname string
-	err := s.db.QueryRow(`SELECT nickname FROM users WHERE email = ?`, email).Scan(&nickname)
-	if err == nil && nickname != "" {
-		return nickname
+func (s *Server) newOAuthState() string {
+	raw := fmt.Sprintf("%d-%d", time.Now().UnixNano(), rand.IntN(1_000_000))
+	sum := sha256.Sum256([]byte(raw))
+	return base64.RawURLEncoding.EncodeToString(sum[:16])
+}
+
+func (s *Server) validOAuthState(r *http.Request) bool {
+	queryState := strings.TrimSpace(r.URL.Query().Get("state"))
+	cookie, err := r.Cookie("button_air_drop_oauth_state")
+	if err != nil || queryState == "" {
+		return false
 	}
-	return game.MaskEmail(email)
+	return subtleConstantEqual(queryState, cookie.Value)
+}
+
+func (s *Server) exchangeKakaoCode(code string) (string, error) {
+	values := url.Values{}
+	values.Set("grant_type", "authorization_code")
+	values.Set("client_id", s.cfg.Kakao.RestAPIKey)
+	values.Set("redirect_uri", s.cfg.Kakao.RedirectURI)
+	values.Set("code", code)
+	if strings.TrimSpace(s.cfg.Kakao.ClientSecret) != "" {
+		values.Set("client_secret", s.cfg.Kakao.ClientSecret)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, "https://kauth.kakao.com/oauth/token", strings.NewReader(values.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=utf-8")
+
+	res, err := s.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return "", err
+	}
+	if res.StatusCode >= 400 {
+		return "", fmt.Errorf("kakao token http %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var tokenResponse kakaoTokenResponse
+	if err := json.Unmarshal(body, &tokenResponse); err != nil {
+		return "", err
+	}
+	if tokenResponse.AccessToken == "" {
+		return "", errors.New("missing kakao access token")
+	}
+	return tokenResponse.AccessToken, nil
+}
+
+func (s *Server) fetchKakaoUser(accessToken string) (kakaoUserInfo, error) {
+	req, err := http.NewRequest(http.MethodGet, "https://kapi.kakao.com/v2/user/me", nil)
+	if err != nil {
+		return kakaoUserInfo{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	res, err := s.httpClient.Do(req)
+	if err != nil {
+		return kakaoUserInfo{}, err
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return kakaoUserInfo{}, err
+	}
+	if res.StatusCode >= 400 {
+		return kakaoUserInfo{}, fmt.Errorf("kakao user http %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var user kakaoUserInfo
+	if err := json.Unmarshal(body, &user); err != nil {
+		return kakaoUserInfo{}, err
+	}
+	if user.ID == 0 {
+		return kakaoUserInfo{}, errors.New("missing kakao user id")
+	}
+	return user, nil
+}
+
+func (s *Server) redirectLoginResult(w http.ResponseWriter, r *http.Request, token, nickname, contactEmail, loginError string) {
+	target := "/"
+	values := url.Values{}
+	if token != "" {
+		values.Set("accessToken", token)
+	}
+	if nickname != "" {
+		values.Set("nickname", nickname)
+	}
+	if contactEmail != "" {
+		values.Set("email", contactEmail)
+	}
+	if loginError != "" {
+		values.Set("loginError", loginError)
+	}
+	if encoded := values.Encode(); encoded != "" {
+		target += "?" + encoded
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "button_air_drop_oauth_state",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, target, http.StatusFound)
 }
 
 func randomNickname() string {
@@ -853,6 +978,33 @@ func isValidNickname(value string) bool {
 
 func isUniqueConstraintError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
+}
+
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func consentTimestamp(contactEmail string, consent bool, now string) string {
+	if contactEmail == "" || !consent {
+		return ""
+	}
+	return now
+}
+
+func subtleConstantEqual(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	left := []byte(a)
+	right := []byte(b)
+	var diff byte
+	for i := range left {
+		diff |= left[i] ^ right[i]
+	}
+	return diff == 0
 }
 
 func clientIPFromRequest(r *http.Request) string {

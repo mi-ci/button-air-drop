@@ -88,6 +88,27 @@ CREATE INDEX IF NOT EXISTS idx_auth_request_log_ip_created
 	if _, err := db.Exec(`ALTER TABLE ranking_entries ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
 		return err
 	}
+	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN auth_provider TEXT NOT NULL DEFAULT 'email'`); err != nil && !isDuplicateColumnError(err) {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN kakao_id TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN login_email TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN contact_email TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN contact_email_consent INTEGER NOT NULL DEFAULT 0`); err != nil && !isDuplicateColumnError(err) {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN contact_email_consent_at TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
+		return err
+	}
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_kakao_id ON users(kakao_id)`); err != nil {
+		return err
+	}
 
 	return nil
 }
