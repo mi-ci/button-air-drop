@@ -9,7 +9,7 @@ import (
 
 type RankingEntry struct {
 	Rank        int    `json:"rank"`
-	Email       string `json:"email"`
+	UserID      string `json:"userId"`
 	DisplayName string `json:"displayName"`
 	DurationMS  int64  `json:"durationMs"`
 }
@@ -19,20 +19,20 @@ type State struct {
 	RankingDate     string         `json:"rankingDate"`
 	RemainingMS     int64          `json:"remainingMs"`
 	InitialMS       int64          `json:"initialMs"`
-	LeaderEmail     string         `json:"leaderEmail"`
+	LeaderUserID    string         `json:"leaderUserId"`
 	LeaderName      string         `json:"leaderName"`
 	Leaderboard     []RankingEntry `json:"leaderboard"`
 	YesterdayWinner *RankingEntry  `json:"yesterdayWinner,omitempty"`
 }
 
 type Manager struct {
-	mu          sync.Mutex
-	db          *sql.DB
-	initial     time.Duration
-	location    *time.Location
-	leaderEmail string
-	leaderSince time.Time
-	expiresAt   time.Time
+	mu           sync.Mutex
+	db           *sql.DB
+	initial      time.Duration
+	location     *time.Location
+	leaderUserID string
+	leaderSince  time.Time
+	expiresAt    time.Time
 }
 
 func NewManager(db *sql.DB, initial time.Duration, location *time.Location) *Manager {
@@ -60,7 +60,7 @@ func (m *Manager) Start(ctx context.Context) {
 	}()
 }
 
-func (m *Manager) Click(email string) (bool, error) {
+func (m *Manager) Click(userID string) (bool, error) {
 	now := time.Now().In(m.location)
 
 	m.mu.Lock()
@@ -70,15 +70,15 @@ func (m *Manager) Click(email string) (bool, error) {
 		m.persistLeaderLocked(now)
 	}
 
-	if m.leaderEmail != "" && m.leaderEmail != email {
+	if m.leaderUserID != "" && m.leaderUserID != userID {
 		m.persistLeaderLocked(now)
 	}
 
-	if m.leaderEmail == email && now.Before(m.expiresAt) {
+	if m.leaderUserID == userID && now.Before(m.expiresAt) {
 		return false, nil
 	}
 
-	m.leaderEmail = email
+	m.leaderUserID = userID
 	m.leaderSince = now
 	m.expiresAt = now.Add(m.initial)
 	return true, m.saveCurrentRoundLocked(now)
@@ -99,14 +99,14 @@ func (m *Manager) Snapshot() (State, error) {
 		Leaderboard:  []RankingEntry{},
 	}
 
-	if m.leaderEmail != "" {
+	if m.leaderUserID != "" {
 		remaining := m.expiresAt.Sub(now)
 		if remaining < 0 {
 			remaining = 0
 		}
 		state.RemainingMS = remaining.Milliseconds()
-		state.LeaderEmail = m.leaderEmail
-		state.LeaderName = m.lookupDisplayName(m.leaderEmail)
+		state.LeaderUserID = m.leaderUserID
+		state.LeaderName = m.lookupDisplayName(m.leaderUserID)
 	}
 
 	rows, err := m.db.Query(`
@@ -125,7 +125,7 @@ func (m *Manager) Snapshot() (State, error) {
 	for rows.Next() {
 		var entry RankingEntry
 		entry.Rank = rank
-		if err := rows.Scan(&entry.Email, &entry.DisplayName, &entry.DurationMS); err != nil {
+		if err := rows.Scan(&entry.UserID, &entry.DisplayName, &entry.DurationMS); err != nil {
 			return state, err
 		}
 		state.Leaderboard = append(state.Leaderboard, entry)
@@ -145,7 +145,7 @@ func (m *Manager) Snapshot() (State, error) {
 		WHERE ranking_date = ?
 		ORDER BY duration_ms DESC, created_at ASC
 		LIMIT 1
-	`, yesterday).Scan(&winner.Email, &winner.DisplayName, &winner.DurationMS)
+	`, yesterday).Scan(&winner.UserID, &winner.DisplayName, &winner.DurationMS)
 	if err != nil && err != sql.ErrNoRows {
 		return state, err
 	}
@@ -160,7 +160,7 @@ func (m *Manager) finalizeExpired(now time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.leaderEmail == "" || m.expiresAt.IsZero() || now.Before(m.expiresAt) {
+	if m.leaderUserID == "" || m.expiresAt.IsZero() || now.Before(m.expiresAt) {
 		return
 	}
 
@@ -168,7 +168,7 @@ func (m *Manager) finalizeExpired(now time.Time) {
 }
 
 func (m *Manager) persistLeaderLocked(now time.Time) {
-	if m.leaderEmail == "" {
+	if m.leaderUserID == "" {
 		_, _ = m.db.Exec(`DELETE FROM current_rounds WHERE id = 1`)
 		return
 	}
@@ -184,9 +184,9 @@ func (m *Manager) persistLeaderLocked(now time.Time) {
 	_, _ = m.db.Exec(`
 		INSERT INTO ranking_entries (ranking_date, email, masked_email, display_name, duration_ms, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)
-	`, rankingDate(now, m.location), m.leaderEmail, MaskEmail(m.leaderEmail), m.lookupDisplayName(m.leaderEmail), duration.Milliseconds(), now.Format(time.RFC3339Nano))
+	`, rankingDate(now, m.location), m.leaderUserID, MaskUserID(m.leaderUserID), m.lookupDisplayName(m.leaderUserID), duration.Milliseconds(), now.Format(time.RFC3339Nano))
 
-	m.leaderEmail = ""
+	m.leaderUserID = ""
 	m.leaderSince = time.Time{}
 	m.expiresAt = time.Time{}
 	_, _ = m.db.Exec(`DELETE FROM current_rounds WHERE id = 1`)
@@ -202,13 +202,13 @@ func (m *Manager) saveCurrentRoundLocked(now time.Time) error {
 			leader_since = excluded.leader_since,
 			expires_at = excluded.expires_at,
 			updated_at = excluded.updated_at
-	`, rankingDate(now, m.location), m.leaderEmail, m.leaderSince.Format(time.RFC3339Nano), m.expiresAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+	`, rankingDate(now, m.location), m.leaderUserID, m.leaderSince.Format(time.RFC3339Nano), m.expiresAt.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	return err
 }
 
 func (m *Manager) restoreCurrentRound() {
 	var rankingDay string
-	var leaderEmail string
+	var leaderUserID string
 	var leaderSinceRaw string
 	var expiresAtRaw string
 
@@ -216,7 +216,7 @@ func (m *Manager) restoreCurrentRound() {
 		SELECT ranking_date, leader_email, leader_since, expires_at
 		FROM current_rounds
 		WHERE id = 1
-	`).Scan(&rankingDay, &leaderEmail, &leaderSinceRaw, &expiresAtRaw)
+	`).Scan(&rankingDay, &leaderUserID, &leaderSinceRaw, &expiresAtRaw)
 	if err != nil {
 		return
 	}
@@ -239,7 +239,7 @@ func (m *Manager) restoreCurrentRound() {
 	}
 
 	m.mu.Lock()
-	m.leaderEmail = leaderEmail
+	m.leaderUserID = leaderUserID
 	m.leaderSince = leaderSince.In(m.location)
 	m.expiresAt = expiresAt.In(m.location)
 	m.mu.Unlock()
@@ -251,25 +251,18 @@ func rankingDate(now time.Time, loc *time.Location) string {
 	return now.In(loc).Format("2006-01-02")
 }
 
-func (m *Manager) lookupDisplayName(email string) string {
+func (m *Manager) lookupDisplayName(userID string) string {
 	var nickname string
-	err := m.db.QueryRow(`SELECT nickname FROM users WHERE email = ?`, email).Scan(&nickname)
+	err := m.db.QueryRow(`SELECT nickname FROM users WHERE kakao_id = ? OR email = ? LIMIT 1`, userID, userID).Scan(&nickname)
 	if err == nil && nickname != "" {
 		return nickname
 	}
-	return MaskEmail(email)
+	return MaskUserID(userID)
 }
 
-func MaskEmail(email string) string {
-	at := -1
-	for i, ch := range email {
-		if ch == '@' {
-			at = i
-			break
-		}
-	}
-	if at <= 1 {
+func MaskUserID(userID string) string {
+	if len(userID) <= 4 {
 		return "***"
 	}
-	return email[:2] + "***" + email[at:]
+	return userID[:2] + "***" + userID[len(userID)-2:]
 }

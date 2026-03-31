@@ -27,7 +27,7 @@ function App() {
     if (accessToken) {
       setSession({
         userId: "",
-        email: params.get("email") ?? "",
+        contactEmail: params.get("contactEmail") ?? params.get("email") ?? "",
         nickname: params.get("nickname") ?? "",
         accessToken,
       });
@@ -157,7 +157,8 @@ function App() {
             ? {
                 ...current,
                 userId: data.userId ?? current.userId,
-                email: data.contactEmail ?? current.email,
+                contactEmail:
+                  data.contactEmail ?? current.contactEmail ?? "",
                 nickname: data.nickname ?? current.nickname,
               }
             : current,
@@ -178,7 +179,7 @@ function App() {
         if (!current) {
           return current;
         }
-        if (!current.leaderEmail) {
+        if (!current.leaderUserId) {
           return {
             ...current,
             remainingMs: current.initialMs ?? 1800000,
@@ -192,7 +193,7 @@ function App() {
     }, 100);
 
     return () => window.clearInterval(timer);
-  }, [gameState?.leaderEmail]);
+  }, [gameState?.leaderUserId]);
 
   useEffect(() => {
     function handleKeydown(event) {
@@ -220,7 +221,7 @@ function App() {
   }, [message]);
 
   const isLeader =
-    session?.userId && gameState?.leaderEmail === session.userId;
+    session?.userId && gameState?.leaderUserId === session.userId;
   const leaderboard = gameState?.leaderboard ?? [];
   const yesterdayWinner = gameState?.yesterdayWinner ?? null;
   const rankingDateLabel = gameState?.rankingDate ?? "-";
@@ -308,7 +309,7 @@ function App() {
 
   function openProfile() {
     setNickname(session?.nickname ?? "");
-    setContactEmail(contactEmail || session?.email || "");
+    setContactEmail(contactEmail || session?.contactEmail || "");
     setProfileOpen(true);
     setDrawerOpen(false);
   }
@@ -348,7 +349,7 @@ function App() {
         current
           ? {
               ...current,
-              email: data.contactEmail ?? "",
+              contactEmail: data.contactEmail ?? "",
               nickname: data.nickname,
             }
           : current,
@@ -469,7 +470,7 @@ function App() {
               leaderboard.map((entry) => (
                 <div
                   className="rank-row"
-                  key={`${entry.rank}-${entry.email}-${entry.durationMs}`}
+                  key={`${entry.rank}-${entry.userId}-${entry.durationMs}`}
                 >
                   <span>
                     #{entry.rank} {entry.displayName}
@@ -528,7 +529,7 @@ function App() {
             </div>
             <div className="summary-row">
               <span>연락 이메일</span>
-              <strong>{myHistory?.contactEmail || session?.email || "-"}</strong>
+              <strong>{myHistory?.contactEmail || session?.contactEmail || "-"}</strong>
             </div>
             <div className="summary-row">
               <span>시도 횟수</span>
@@ -611,7 +612,7 @@ function App() {
         <div className="drawer-header">
           <div className="drawer-user">
             <strong>{session?.nickname || "-"}</strong>
-            <span>{session?.email || "연락 이메일 미등록"}</span>
+            <span>{session?.contactEmail || "연락 이메일 미등록"}</span>
           </div>
           <button className="icon-button" onClick={() => setDrawerOpen(false)}>
             ×

@@ -48,16 +48,13 @@ type Server struct {
 }
 
 type ClickUsage struct {
-	Used      int  `json:"used"`
-	Limit     int  `json:"limit"`
-	Remaining int  `json:"remaining"`
-	IsAdmin   bool `json:"isAdmin"`
+	Used      int `json:"used"`
+	Limit     int `json:"limit"`
+	Remaining int `json:"remaining"`
 }
 
 const (
 	defaultDailyClickLimit = 3
-	adminDailyClickLimit   = 1000
-	adminEmail             = "atm7999@naver.com"
 	clickCooldown          = time.Second
 	authIPWindow           = time.Hour
 	authIPLimit            = 3
@@ -255,7 +252,7 @@ func (s *Server) handleKakaoCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.SignToken(s.jwtSecret, user.UserID, user.ContactEmail, user.Nickname, time.Now().Add(s.tokenTTL))
+	token, err := auth.SignToken(s.jwtSecret, user.UserID, user.Nickname, time.Now().Add(s.tokenTTL))
 	if err != nil {
 		s.redirectLoginResult(w, r, "", "", "", "token-sign-failed")
 		return
@@ -279,7 +276,6 @@ func (s *Server) handleMe(w http.ResponseWriter, _ *http.Request, userID string)
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"userId":              user.UserID,
-		"email":               user.ContactEmail,
 		"nickname":            user.Nickname,
 		"contactEmail":        user.ContactEmail,
 		"contactEmailConsent": user.ContactEmailConsent,
@@ -359,8 +355,8 @@ func (s *Server) handleProfileUpdate(w http.ResponseWriter, r *http.Request, use
 	_, err = s.db.Exec(`
 		UPDATE users
 		SET nickname = ?, nickname_changed_at = ?, contact_email = ?, contact_email_changed_at = ?, contact_email_consent = ?, contact_email_consent_at = ?, updated_at = ?
-		WHERE email = ?
-	`, nickname, nicknameChangedAt, contactEmail, contactEmailChangedAt, boolToInt(req.ContactEmailConsent), consentTimestamp(contactEmail, req.ContactEmailConsent, now), now, userID)
+		WHERE kakao_id = ? OR email = ?
+	`, nickname, nicknameChangedAt, contactEmail, contactEmailChangedAt, boolToInt(req.ContactEmailConsent), consentTimestamp(contactEmail, req.ContactEmailConsent, now), now, userID, userID)
 	if err != nil {
 		if isUniqueConstraintError(err) {
 			http.Error(w, "nickname already taken", http.StatusConflict)
@@ -372,7 +368,6 @@ func (s *Server) handleProfileUpdate(w http.ResponseWriter, r *http.Request, use
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"userId":              userID,
-		"email":               contactEmail,
 		"nickname":            nickname,
 		"contactEmail":        contactEmail,
 		"contactEmailConsent": req.ContactEmailConsent,
@@ -493,7 +488,6 @@ func (s *Server) handleMyRanking(w http.ResponseWriter, _ *http.Request, userID 
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"userId":       userID,
-		"email":        user.ContactEmail,
 		"nickname":     user.Nickname,
 		"contactEmail": user.ContactEmail,
 		"rankingDate":  currentRankingDate(now, s.location),
@@ -831,14 +825,14 @@ func currentRankingDate(now time.Time, loc *time.Location) string {
 	return now.In(loc).Format("2006-01-02")
 }
 
-func (s *Server) getClickUsage(email string) (ClickUsage, error) {
-	limit := clickLimitForEmail(email)
+func (s *Server) getClickUsage(userID string) (ClickUsage, error) {
+	limit := defaultDailyClickLimit
 	used := 0
 	err := s.db.QueryRow(`
 		SELECT click_count
 		FROM daily_click_usage
 		WHERE ranking_date = ? AND email = ?
-	`, currentRankingDate(time.Now().In(s.location), s.location), email).Scan(&used)
+	`, currentRankingDate(time.Now().In(s.location), s.location), userID).Scan(&used)
 	if err != nil && err != sql.ErrNoRows {
 		return ClickUsage{}, err
 	}
@@ -855,19 +849,18 @@ func (s *Server) getClickUsage(email string) (ClickUsage, error) {
 		Used:      used,
 		Limit:     limit,
 		Remaining: remaining,
-		IsAdmin:   strings.EqualFold(email, adminEmail),
 	}, nil
 }
 
-func (s *Server) consumeClickIfAllowed(email string) (bool, ClickUsage, error) {
-	usage, err := s.getClickUsage(email)
+func (s *Server) consumeClickIfAllowed(userID string) (bool, ClickUsage, error) {
+	usage, err := s.getClickUsage(userID)
 	if err != nil {
 		return false, ClickUsage{}, err
 	}
 	return usage.Used < usage.Limit, usage, nil
 }
 
-func (s *Server) incrementClickUsage(email string) (ClickUsage, error) {
+func (s *Server) incrementClickUsage(userID string) (ClickUsage, error) {
 	now := time.Now().In(s.location)
 	_, err := s.db.Exec(`
 		INSERT INTO daily_click_usage (ranking_date, email, click_count, updated_at)
@@ -875,26 +868,19 @@ func (s *Server) incrementClickUsage(email string) (ClickUsage, error) {
 		ON CONFLICT(ranking_date, email) DO UPDATE SET
 			click_count = daily_click_usage.click_count + 1,
 			updated_at = excluded.updated_at
-	`, currentRankingDate(now, s.location), email, now.Format(time.RFC3339Nano))
+	`, currentRankingDate(now, s.location), userID, now.Format(time.RFC3339Nano))
 	if err != nil {
 		return ClickUsage{}, err
 	}
-	return s.getClickUsage(email)
+	return s.getClickUsage(userID)
 }
 
-func clickLimitForEmail(email string) int {
-	if strings.EqualFold(email, adminEmail) {
-		return adminDailyClickLimit
-	}
-	return defaultDailyClickLimit
-}
-
-func (s *Server) allowClickNow(email string) (bool, time.Duration) {
+func (s *Server) allowClickNow(userID string) (bool, time.Duration) {
 	s.clickMu.Lock()
 	defer s.clickMu.Unlock()
 
 	now := time.Now()
-	last := s.lastClickAt[email]
+	last := s.lastClickAt[userID]
 	if !last.IsZero() {
 		elapsed := now.Sub(last)
 		if elapsed < clickCooldown {
@@ -902,7 +888,7 @@ func (s *Server) allowClickNow(email string) (bool, time.Duration) {
 		}
 	}
 
-	s.lastClickAt[email] = now
+	s.lastClickAt[userID] = now
 	return true, 0
 }
 
@@ -959,6 +945,7 @@ func (s *Server) logAuthRequest(ip string, now time.Time) error {
 
 type userProfile struct {
 	UserID                string
+	KakaoID               string
 	Nickname              string
 	ContactEmail          string
 	ContactEmailConsent   bool
@@ -996,11 +983,13 @@ func (s *Server) lookupUser(userID string) (userProfile, error) {
 	var user userProfile
 	var consentInt int
 	err := s.db.QueryRow(`
-		SELECT email, nickname, contact_email, contact_email_consent, nickname_changed_at, contact_email_changed_at
+		SELECT email, kakao_id, nickname, contact_email, contact_email_consent, nickname_changed_at, contact_email_changed_at
 		FROM users
-		WHERE email = ?
-	`, userID).Scan(
+		WHERE kakao_id = ? OR email = ?
+		LIMIT 1
+	`, userID, userID).Scan(
 		&user.UserID,
+		&user.KakaoID,
 		&user.Nickname,
 		&user.ContactEmail,
 		&consentInt,
@@ -1009,6 +998,9 @@ func (s *Server) lookupUser(userID string) (userProfile, error) {
 	)
 	if err != nil {
 		return user, err
+	}
+	if user.KakaoID != "" {
+		user.UserID = user.KakaoID
 	}
 	user.ContactEmailConsent = consentInt == 1
 	return user, nil
@@ -1033,7 +1025,7 @@ func (s *Server) ensureKakaoUser(kakaoUser kakaoUserInfo) (userProfile, error) {
 	kakaoID := strconv.FormatInt(kakaoUser.ID, 10)
 
 	var existingUserID string
-	err := s.db.QueryRow(`SELECT email FROM users WHERE kakao_id = ?`, kakaoID).Scan(&existingUserID)
+	err := s.db.QueryRow(`SELECT kakao_id FROM users WHERE kakao_id = ?`, kakaoID).Scan(&existingUserID)
 	if err == nil {
 		return s.lookupUser(existingUserID)
 	}
@@ -1041,7 +1033,7 @@ func (s *Server) ensureKakaoUser(kakaoUser kakaoUserInfo) (userProfile, error) {
 		return userProfile{}, err
 	}
 
-	userID := "kakao:" + kakaoID
+	userID := kakaoID
 	now := time.Now().In(s.location).Format(time.RFC3339Nano)
 	for range 64 {
 		nickname := randomNickname()
@@ -1159,7 +1151,7 @@ func (s *Server) redirectLoginResult(w http.ResponseWriter, r *http.Request, tok
 		values.Set("nickname", nickname)
 	}
 	if contactEmail != "" {
-		values.Set("email", contactEmail)
+		values.Set("contactEmail", contactEmail)
 	}
 	if loginError != "" {
 		values.Set("loginError", loginError)

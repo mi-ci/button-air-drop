@@ -104,6 +104,21 @@ CREATE INDEX IF NOT EXISTS idx_auth_request_log_ip_created
 	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_kakao_id ON users(kakao_id)`); err != nil {
 		return err
 	}
+	if _, err := db.Exec(`UPDATE users SET email = kakao_id WHERE kakao_id != '' AND email LIKE 'kakao:%'`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`UPDATE ranking_entries SET email = substr(email, 7) WHERE email LIKE 'kakao:%'`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`UPDATE ranking_entries SET masked_email = substr(email, 1, 2) || '***' WHERE masked_email = '***' AND email != ''`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`UPDATE daily_click_usage SET email = substr(email, 7) WHERE email LIKE 'kakao:%'`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`UPDATE current_rounds SET leader_email = substr(leader_email, 7) WHERE leader_email LIKE 'kakao:%'`); err != nil {
+		return err
+	}
 	if _, err := db.Exec(`ALTER TABLE users DROP COLUMN login_email`); err != nil && !isMissingColumnError(err) && !isUnsupportedAlterError(err) {
 		return err
 	}

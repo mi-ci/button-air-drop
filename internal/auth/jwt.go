@@ -14,13 +14,12 @@ import (
 type Claims struct {
 	Subject  string `json:"sub"`
 	UserID   string `json:"uid"`
-	Email    string `json:"email,omitempty"`
 	Nickname string `json:"nickname,omitempty"`
 	Exp      int64  `json:"exp"`
 	Iat      int64  `json:"iat"`
 }
 
-func SignToken(secret []byte, userID, email, nickname string, expiresAt time.Time) (string, error) {
+func SignToken(secret []byte, userID, nickname string, expiresAt time.Time) (string, error) {
 	headerJSON, err := json.Marshal(map[string]string{
 		"alg": "HS256",
 		"typ": "JWT",
@@ -32,7 +31,6 @@ func SignToken(secret []byte, userID, email, nickname string, expiresAt time.Tim
 	claimsJSON, err := json.Marshal(Claims{
 		Subject:  userID,
 		UserID:   userID,
-		Email:    email,
 		Nickname: nickname,
 		Exp:      expiresAt.Unix(),
 		Iat:      time.Now().Unix(),
