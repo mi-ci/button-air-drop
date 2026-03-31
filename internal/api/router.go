@@ -60,6 +60,7 @@ const (
 	clickCooldown          = time.Second
 	authIPWindow           = time.Hour
 	authIPLimit            = 3
+	profileChangeWindow    = 7 * 24 * time.Hour
 )
 
 type StatusResponse struct {
@@ -264,17 +265,48 @@ func (s *Server) handleProfileUpdate(w http.ResponseWriter, r *http.Request, use
 		return
 	}
 
-	if _, err := s.lookupUser(userID); err != nil {
+	user, err := s.lookupUser(userID)
+	if err != nil {
 		http.Error(w, "failed to load user", http.StatusInternalServerError)
 		return
 	}
 
-	now := time.Now().In(s.location).Format(time.RFC3339Nano)
-	_, err := s.db.Exec(`
+	nowTime := time.Now().In(s.location)
+	canChangeNickname, err := canChangeProfileField(user.Nickname, nickname, user.NicknameChangedAt, nowTime)
+	if err != nil {
+		http.Error(w, "failed to validate nickname change", http.StatusInternalServerError)
+		return
+	}
+	if !canChangeNickname {
+		http.Error(w, "nickname can only be changed once every 7 days", http.StatusTooManyRequests)
+		return
+	}
+
+	canChangeContactEmail, err := canChangeProfileField(user.ContactEmail, contactEmail, user.ContactEmailChangedAt, nowTime)
+	if err != nil {
+		http.Error(w, "failed to validate contact email change", http.StatusInternalServerError)
+		return
+	}
+	if !canChangeContactEmail {
+		http.Error(w, "contact email can only be changed once every 7 days", http.StatusTooManyRequests)
+		return
+	}
+
+	now := nowTime.Format(time.RFC3339Nano)
+	nicknameChangedAt := user.NicknameChangedAt
+	if user.Nickname != nickname {
+		nicknameChangedAt = now
+	}
+	contactEmailChangedAt := user.ContactEmailChangedAt
+	if user.ContactEmail != contactEmail {
+		contactEmailChangedAt = now
+	}
+
+	_, err = s.db.Exec(`
 		UPDATE users
-		SET nickname = ?, contact_email = ?, contact_email_consent = ?, contact_email_consent_at = ?, updated_at = ?
+		SET nickname = ?, nickname_changed_at = ?, contact_email = ?, contact_email_changed_at = ?, contact_email_consent = ?, contact_email_consent_at = ?, updated_at = ?
 		WHERE email = ?
-	`, nickname, contactEmail, boolToInt(req.ContactEmailConsent), consentTimestamp(contactEmail, req.ContactEmailConsent, now), now, userID)
+	`, nickname, nicknameChangedAt, contactEmail, contactEmailChangedAt, boolToInt(req.ContactEmailConsent), consentTimestamp(contactEmail, req.ContactEmailConsent, now), now, userID)
 	if err != nil {
 		if isUniqueConstraintError(err) {
 			http.Error(w, "nickname already taken", http.StatusConflict)
@@ -757,10 +789,12 @@ func (s *Server) logAuthRequest(ip string, now time.Time) error {
 }
 
 type userProfile struct {
-	UserID              string
-	Nickname            string
-	ContactEmail        string
-	ContactEmailConsent bool
+	UserID                string
+	Nickname              string
+	ContactEmail          string
+	ContactEmailConsent   bool
+	NicknameChangedAt     string
+	ContactEmailChangedAt string
 }
 
 type kakaoTokenResponse struct {
@@ -793,15 +827,37 @@ func (s *Server) lookupUser(userID string) (userProfile, error) {
 	var user userProfile
 	var consentInt int
 	err := s.db.QueryRow(`
-		SELECT email, nickname, contact_email, contact_email_consent
+		SELECT email, nickname, contact_email, contact_email_consent, nickname_changed_at, contact_email_changed_at
 		FROM users
 		WHERE email = ?
-	`, userID).Scan(&user.UserID, &user.Nickname, &user.ContactEmail, &consentInt)
+	`, userID).Scan(
+		&user.UserID,
+		&user.Nickname,
+		&user.ContactEmail,
+		&consentInt,
+		&user.NicknameChangedAt,
+		&user.ContactEmailChangedAt,
+	)
 	if err != nil {
 		return user, err
 	}
 	user.ContactEmailConsent = consentInt == 1
 	return user, nil
+}
+
+func canChangeProfileField(currentValue, nextValue, changedAt string, now time.Time) (bool, error) {
+	if currentValue == nextValue {
+		return true, nil
+	}
+	if strings.TrimSpace(changedAt) == "" {
+		return true, nil
+	}
+
+	lastChangedAt, err := time.Parse(time.RFC3339Nano, changedAt)
+	if err != nil {
+		return false, err
+	}
+	return now.Sub(lastChangedAt) >= profileChangeWindow, nil
 }
 
 func (s *Server) ensureKakaoUser(kakaoUser kakaoUserInfo) (userProfile, error) {

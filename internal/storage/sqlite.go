@@ -104,6 +104,12 @@ CREATE INDEX IF NOT EXISTS idx_auth_request_log_ip_created
 	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN contact_email_consent_at TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
 		return err
 	}
+	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN nickname_changed_at TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN contact_email_changed_at TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
+		return err
+	}
 	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_kakao_id ON users(kakao_id)`); err != nil {
 		return err
 	}
