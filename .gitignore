@@ -22,3 +22,4 @@ frontend/dist/
 *.yml
 !config.example.yml
 *.png
+REAMDE1.md

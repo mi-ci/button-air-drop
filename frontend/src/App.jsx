@@ -159,8 +159,7 @@ function App() {
             ? {
                 ...current,
                 userId: data.userId ?? current.userId,
-                contactEmail:
-                  data.contactEmail ?? current.contactEmail ?? "",
+                contactEmail: data.contactEmail ?? current.contactEmail ?? "",
                 nickname: data.nickname ?? current.nickname,
               }
             : current,
@@ -352,7 +351,9 @@ function App() {
         if (errorText === "nickname can only be changed once every 7 days") {
           throw new Error("nickname-change-limited");
         }
-        if (errorText === "contact email can only be changed once every 7 days") {
+        if (
+          errorText === "contact email can only be changed once every 7 days"
+        ) {
           throw new Error("contact-email-change-limited");
         }
         if (errorText === "contact email consent required") {
@@ -507,7 +508,7 @@ function App() {
                 >
                   <div className="rank-label">
                     <span className={`rank-badge rank-${entry.rank}`}>
-                      {entry.rank === 1 ? "TROPHY" : `${entry.rank}위`}
+                      {entry.rank === 1 ? "우승" : `${entry.rank}위`}
                     </span>
                     <span className="rank-name">{entry.displayName}</span>
                   </div>
@@ -565,7 +566,9 @@ function App() {
             </div>
             <div className="summary-row">
               <span>연락 이메일</span>
-              <strong>{myHistory?.contactEmail || session?.contactEmail || "-"}</strong>
+              <strong>
+                {myHistory?.contactEmail || session?.contactEmail || "-"}
+              </strong>
             </div>
             <div className="summary-row">
               <span>시도 횟수</span>
@@ -580,7 +583,10 @@ function App() {
           <div className="history-list" style={{ marginTop: 16 }}>
             {myHistory?.entries?.length ? (
               myHistory.entries.map((entry, index) => (
-                <div className="history-row" key={`${entry.createdAt}-${index}`}>
+                <div
+                  className="history-row"
+                  key={`${entry.createdAt}-${index}`}
+                >
                   <span>
                     {entry.currentRank ? `#${entry.currentRank} ` : ""}
                     {new Date(entry.createdAt).toLocaleTimeString("ko-KR", {
@@ -605,7 +611,10 @@ function App() {
               <h2>마이페이지</h2>
               <p>닉네임과 우승 안내용 이메일을 관리합니다.</p>
             </div>
-            <button className="icon-button" onClick={() => setProfileOpen(false)}>
+            <button
+              className="icon-button"
+              onClick={() => setProfileOpen(false)}
+            >
               ×
             </button>
           </div>
@@ -637,7 +646,11 @@ function App() {
               </span>
             </label>
             <div className="modal-actions">
-              <button className="primary-button" disabled={pending} type="submit">
+              <button
+                className="primary-button"
+                disabled={pending}
+                type="submit"
+              >
                 저장
               </button>
             </div>
