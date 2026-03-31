@@ -21,7 +21,6 @@ type ServerConfig struct {
 type AuthConfig struct {
 	JWTSecret        string `yaml:"jwt_secret"`
 	AccessTokenHours int    `yaml:"access_token_hours"`
-	CodeTTLMinutes   int    `yaml:"code_ttl_minutes"`
 }
 
 type GameConfig struct {
@@ -58,9 +57,6 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Auth.AccessTokenHours == 0 {
 		cfg.Auth.AccessTokenHours = 168
-	}
-	if cfg.Auth.CodeTTLMinutes == 0 {
-		cfg.Auth.CodeTTLMinutes = 10
 	}
 	if cfg.Game.InitialSeconds == 0 {
 		cfg.Game.InitialSeconds = 1800

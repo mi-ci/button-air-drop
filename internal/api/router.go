@@ -38,7 +38,6 @@ type Server struct {
 	jwtSecret   []byte
 	location    *time.Location
 	wsHub       *wsHub
-	codeTTL     time.Duration
 	tokenTTL    time.Duration
 	httpServer  http.Handler
 	clickMu     sync.Mutex
@@ -146,7 +145,6 @@ func SetupRoutes(cfg *config.Config) (http.Handler, func(context.Context) error,
 		jwtSecret:   []byte(cfg.Auth.JWTSecret),
 		location:    loc,
 		wsHub:       newWSHub(),
-		codeTTL:     time.Duration(cfg.Auth.CodeTTLMinutes) * time.Minute,
 		tokenTTL:    time.Duration(cfg.Auth.AccessTokenHours) * time.Hour,
 		lastClickAt: map[string]time.Time{},
 		httpClient:  &http.Client{Timeout: 10 * time.Second},

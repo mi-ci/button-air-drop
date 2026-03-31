@@ -4,7 +4,6 @@ server:
 auth:
   jwt_secret: change-me-before-production
   access_token_hours: 168
-  code_ttl_minutes: 10
 
 game:
   initial_seconds: 1800
