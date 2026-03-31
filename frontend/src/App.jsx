@@ -342,6 +342,9 @@ function App() {
         if (response.status === 409) {
           throw new Error("nickname-taken");
         }
+        if (errorText === "invalid nickname") {
+          throw new Error("invalid-nickname");
+        }
         if (errorText === "nickname can only be changed once every 7 days") {
           throw new Error("nickname-change-limited");
         }
@@ -371,6 +374,10 @@ function App() {
     } catch (error) {
       if (error.message === "nickname-taken") {
         setMessage("이미 사용 중인 닉네임입니다.");
+        return;
+      }
+      if (error.message === "invalid-nickname") {
+        setMessage("닉네임 양식을 확인하십시오.");
         return;
       }
       if (error.message === "nickname-change-limited") {
