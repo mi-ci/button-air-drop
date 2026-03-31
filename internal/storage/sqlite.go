@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -114,5 +115,5 @@ CREATE INDEX IF NOT EXISTS idx_auth_request_log_ip_created
 }
 
 func isDuplicateColumnError(err error) bool {
-	return err != nil && err.Error() == "duplicate column name: display_name"
+	return err != nil && strings.Contains(err.Error(), "duplicate column name:")
 }
