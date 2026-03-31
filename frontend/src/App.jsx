@@ -575,6 +575,7 @@ function App() {
               myHistory.entries.map((entry, index) => (
                 <div className="history-row" key={`${entry.createdAt}-${index}`}>
                   <span>
+                    {entry.currentRank ? `#${entry.currentRank} ` : ""}
                     {new Date(entry.createdAt).toLocaleTimeString("ko-KR", {
                       hour12: false,
                     })}

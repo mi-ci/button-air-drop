@@ -77,13 +77,21 @@ func (s *Server) handleGameClick(w http.ResponseWriter, r *http.Request, userID 
 
 func (s *Server) handleMyRanking(w http.ResponseWriter, _ *http.Request, userID string) {
 	now := time.Now().In(s.location)
+	rankingDate := currentRankingDate(now, s.location)
+
+	rankByEntryID, err := s.loadCurrentRanks(rankingDate)
+	if err != nil {
+		http.Error(w, "failed to load current ranks", http.StatusInternalServerError)
+		return
+	}
+
 	rows, err := s.db.Query(`
-		SELECT duration_ms, created_at
+		SELECT id, duration_ms, created_at
 		FROM ranking_entries
 		WHERE ranking_date = ? AND user_id = ?
 		ORDER BY duration_ms DESC, created_at ASC
 		LIMIT 10
-	`, currentRankingDate(now, s.location), userID)
+	`, rankingDate, userID)
 	if err != nil {
 		http.Error(w, "failed to load personal rankings", http.StatusInternalServerError)
 		return
@@ -93,9 +101,10 @@ func (s *Server) handleMyRanking(w http.ResponseWriter, _ *http.Request, userID 
 	entries := []map[string]any{}
 	var bestMS int64
 	for rows.Next() {
+		var entryID int64
 		var durationMS int64
 		var createdAt string
-		if err := rows.Scan(&durationMS, &createdAt); err != nil {
+		if err := rows.Scan(&entryID, &durationMS, &createdAt); err != nil {
 			http.Error(w, "failed to scan personal rankings", http.StatusInternalServerError)
 			return
 		}
@@ -103,8 +112,9 @@ func (s *Server) handleMyRanking(w http.ResponseWriter, _ *http.Request, userID 
 			bestMS = durationMS
 		}
 		entries = append(entries, map[string]any{
-			"durationMs": durationMS,
-			"createdAt":  createdAt,
+			"durationMs":  durationMS,
+			"createdAt":   createdAt,
+			"currentRank": rankByEntryID[entryID],
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -122,11 +132,39 @@ func (s *Server) handleMyRanking(w http.ResponseWriter, _ *http.Request, userID 
 		"userId":       userID,
 		"nickname":     user.Nickname,
 		"contactEmail": user.ContactEmail,
-		"rankingDate":  currentRankingDate(now, s.location),
+		"rankingDate":  rankingDate,
 		"attemptCount": len(entries),
 		"bestMs":       bestMS,
 		"entries":      entries,
 	})
+}
+
+func (s *Server) loadCurrentRanks(rankingDate string) (map[int64]int, error) {
+	rows, err := s.db.Query(`
+		SELECT id
+		FROM ranking_entries
+		WHERE ranking_date = ?
+		ORDER BY duration_ms DESC, created_at ASC
+	`, rankingDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ranks := map[int64]int{}
+	rank := 1
+	for rows.Next() {
+		var entryID int64
+		if err := rows.Scan(&entryID); err != nil {
+			return nil, err
+		}
+		ranks[entryID] = rank
+		rank++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ranks, nil
 }
 
 func currentRankingDate(now time.Time, loc *time.Location) string {
