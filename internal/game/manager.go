@@ -80,7 +80,7 @@ func (m *Manager) Click(userID string) (bool, error) {
 
 	m.leaderUserID = userID
 	m.leaderSince = now
-	m.expiresAt = now.Add(m.initial)
+	m.expiresAt = roundExpiresAt(now, m.initial, m.location)
 	return true, m.saveCurrentRoundLocked(now)
 }
 
@@ -160,31 +160,38 @@ func (m *Manager) finalizeExpired(now time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.leaderUserID == "" || m.expiresAt.IsZero() || now.Before(m.expiresAt) {
+	if m.leaderUserID == "" || m.expiresAt.IsZero() {
 		return
 	}
 
-	m.persistLeaderLocked(now)
+	if rankingDate(now, m.location) != rankingDate(m.leaderSince, m.location) {
+		m.persistLeaderLocked(m.expiresAt)
+		return
+	}
+
+	if now.Before(m.expiresAt) {
+		return
+	}
+
+	m.persistLeaderLocked(m.expiresAt)
 }
 
-func (m *Manager) persistLeaderLocked(now time.Time) {
+func (m *Manager) persistLeaderLocked(endAt time.Time) {
 	if m.leaderUserID == "" {
 		_, _ = m.db.Exec(`DELETE FROM current_rounds WHERE id = 1`)
 		return
 	}
 
-	duration := now.Sub(m.leaderSince)
-	if m.expiresAt.Before(now) {
-		duration = m.expiresAt.Sub(m.leaderSince)
-	}
+	duration := endAt.Sub(m.leaderSince)
 	if duration < 0 {
 		duration = 0
 	}
+	rankingDay := rankingDate(m.leaderSince, m.location)
 
 	_, _ = m.db.Exec(`
 		INSERT INTO ranking_entries (ranking_date, user_id, display_name, duration_ms, created_at)
 		VALUES (?, ?, ?, ?, ?)
-	`, rankingDate(now, m.location), m.leaderUserID, m.lookupDisplayName(m.leaderUserID), duration.Milliseconds(), now.Format(time.RFC3339Nano))
+	`, rankingDay, m.leaderUserID, m.lookupDisplayName(m.leaderUserID), duration.Milliseconds(), endAt.Format(time.RFC3339Nano))
 
 	m.leaderUserID = ""
 	m.leaderSince = time.Time{}
@@ -241,7 +248,10 @@ func (m *Manager) restoreCurrentRound() {
 	m.mu.Lock()
 	m.leaderUserID = leaderUserID
 	m.leaderSince = leaderSince.In(m.location)
-	m.expiresAt = expiresAt.In(m.location)
+	m.expiresAt = roundExpiresAt(m.leaderSince, m.initial, m.location)
+	if restoredExpiresAt := expiresAt.In(m.location); restoredExpiresAt.Before(m.expiresAt) {
+		m.expiresAt = restoredExpiresAt
+	}
 	m.mu.Unlock()
 
 	m.finalizeExpired(now)
@@ -249,6 +259,16 @@ func (m *Manager) restoreCurrentRound() {
 
 func rankingDate(now time.Time, loc *time.Location) string {
 	return now.In(loc).Format("2006-01-02")
+}
+
+func roundExpiresAt(start time.Time, initial time.Duration, loc *time.Location) time.Time {
+	expiresAt := start.Add(initial)
+	nextDay := start.In(loc).AddDate(0, 0, 1)
+	dayBoundary := time.Date(nextDay.Year(), nextDay.Month(), nextDay.Day(), 0, 0, 0, 0, loc)
+	if dayBoundary.Before(expiresAt) {
+		return dayBoundary
+	}
+	return expiresAt
 }
 
 func (m *Manager) lookupDisplayName(userID string) string {
