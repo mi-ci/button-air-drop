@@ -600,7 +600,7 @@ function App() {
               type="text"
               value={nickname}
               onChange={(event) => setNickname(event.target.value)}
-              placeholder="닉네임 2~12자"
+              placeholder="닉네임 2~6자"
             />
             <input
               type="email"

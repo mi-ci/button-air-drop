@@ -46,18 +46,20 @@ type kakaoUserInfo struct {
 	} `json:"properties"`
 }
 
-var nicknamePattern = regexp.MustCompile(`^[A-Za-z0-9가-힣]{2,12}$`)
+var nicknamePattern = regexp.MustCompile(`^[A-Za-z0-9가-힣]{2,6}$`)
 
 var nicknameAdjectives = []string{
-	"초록", "맑은", "푸른", "고운", "환한", "검은", "하얀", "붉은",
-	"노란", "은빛", "금빛", "짙은", "밝은", "가벼", "조용", "반짝",
-	"산뜻", "따뜻", "차분", "달큰", "선명", "싱그", "보송", "포근",
+	"초록", "맑은", "푸른", "고운", "환한", "검은", "하얀", "붉은", "노란",
+	"은빛", "금빛", "밝은", "조용", "반짝", "산뜻", "따뜻", "차분", "선명",
+	"포근", "싱그", "달큰", "화창", "청량", "단정", "온화", "영롱", "찬란",
+	"짙은", "부드", "반듯", "고요", "낭만", "예쁜", "힘찬", "기쁜", "상냥",
 }
 
 var nicknameNouns = []string{
-	"호랑", "구름", "바다", "별빛", "산책", "노을", "바람", "여름",
-	"달빛", "새벽", "하늘", "파도", "은하", "서리", "단비", "이슬",
-	"숲길", "겨울", "가을", "봄날", "벚꽃", "소나", "강물", "들꽃",
+	"호랑", "구름", "바다", "별빛", "산책", "노을", "바람", "여름", "달빛",
+	"새벽", "하늘", "파도", "은하", "서리", "단비", "이슬", "숲길", "겨울",
+	"가을", "봄날", "벚꽃", "강물", "들꽃", "소나", "새싹", "꽃길", "하모",
+	"시냇", "물결", "별님", "해님", "솔빛", "달님", "눈꽃", "석양", "풀잎",
 }
 
 func (s *Server) handleKakaoStart(w http.ResponseWriter, r *http.Request) {
@@ -320,6 +322,6 @@ func (s *Server) redirectLoginResult(w http.ResponseWriter, r *http.Request, tok
 func randomNickname() string {
 	adjective := nicknameAdjectives[rand.IntN(len(nicknameAdjectives))]
 	noun := nicknameNouns[rand.IntN(len(nicknameNouns))]
-	number := rand.IntN(900000) + 100000
-	return fmt.Sprintf("%s%s%d", adjective, noun, number)
+	number := rand.IntN(90) + 10
+	return fmt.Sprintf("%s%s%02d", adjective, noun, number)
 }
