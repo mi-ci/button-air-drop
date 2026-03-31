@@ -759,7 +759,6 @@ func (s *Server) logAuthRequest(ip string, now time.Time) error {
 type userProfile struct {
 	UserID              string
 	Nickname            string
-	LoginEmail          string
 	ContactEmail        string
 	ContactEmailConsent bool
 }
@@ -771,7 +770,6 @@ type kakaoTokenResponse struct {
 type kakaoUserInfo struct {
 	ID           int64 `json:"id"`
 	KakaoAccount struct {
-		Email   string `json:"email"`
 		Profile struct {
 			Nickname string `json:"nickname"`
 		} `json:"profile"`
@@ -795,10 +793,10 @@ func (s *Server) lookupUser(userID string) (userProfile, error) {
 	var user userProfile
 	var consentInt int
 	err := s.db.QueryRow(`
-		SELECT email, nickname, login_email, contact_email, contact_email_consent
+		SELECT email, nickname, contact_email, contact_email_consent
 		FROM users
 		WHERE email = ?
-	`, userID).Scan(&user.UserID, &user.Nickname, &user.LoginEmail, &user.ContactEmail, &consentInt)
+	`, userID).Scan(&user.UserID, &user.Nickname, &user.ContactEmail, &consentInt)
 	if err != nil {
 		return user, err
 	}
@@ -808,14 +806,10 @@ func (s *Server) lookupUser(userID string) (userProfile, error) {
 
 func (s *Server) ensureKakaoUser(kakaoUser kakaoUserInfo) (userProfile, error) {
 	kakaoID := strconv.FormatInt(kakaoUser.ID, 10)
-	loginEmail := strings.TrimSpace(strings.ToLower(kakaoUser.KakaoAccount.Email))
 
 	var existingUserID string
 	err := s.db.QueryRow(`SELECT email FROM users WHERE kakao_id = ?`, kakaoID).Scan(&existingUserID)
 	if err == nil {
-		if loginEmail != "" {
-			_, _ = s.db.Exec(`UPDATE users SET login_email = ?, updated_at = ? WHERE email = ?`, loginEmail, time.Now().In(s.location).Format(time.RFC3339Nano), existingUserID)
-		}
 		return s.lookupUser(existingUserID)
 	}
 	if err != sql.ErrNoRows {
@@ -827,14 +821,13 @@ func (s *Server) ensureKakaoUser(kakaoUser kakaoUserInfo) (userProfile, error) {
 	for range 64 {
 		nickname := randomNickname()
 		_, insertErr := s.db.Exec(`
-			INSERT INTO users (email, nickname, created_at, updated_at, auth_provider, kakao_id, login_email)
-			VALUES (?, ?, ?, ?, 'kakao', ?, ?)
-		`, userID, nickname, now, now, kakaoID, loginEmail)
+			INSERT INTO users (email, nickname, created_at, updated_at, auth_provider, kakao_id)
+			VALUES (?, ?, ?, ?, 'kakao', ?)
+		`, userID, nickname, now, now, kakaoID)
 		if insertErr == nil {
 			return userProfile{
-				UserID:     userID,
-				Nickname:   nickname,
-				LoginEmail: loginEmail,
+				UserID:   userID,
+				Nickname: nickname,
 			}, nil
 		}
 		if !isUniqueConstraintError(insertErr) {

@@ -16,4 +16,4 @@ kakao:
   rest_api_key: your-kakao-rest-api-key
   client_secret: your-kakao-client-secret
   redirect_uri: http://localhost:8080/api/auth/kakao/callback
-  scope: account_email
+  scope: ""

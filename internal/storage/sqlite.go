@@ -95,9 +95,6 @@ CREATE INDEX IF NOT EXISTS idx_auth_request_log_ip_created
 	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN kakao_id TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
 		return err
 	}
-	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN login_email TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
-		return err
-	}
 	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN contact_email TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
 		return err
 	}
@@ -110,10 +107,21 @@ CREATE INDEX IF NOT EXISTS idx_auth_request_log_ip_created
 	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_kakao_id ON users(kakao_id)`); err != nil {
 		return err
 	}
+	if _, err := db.Exec(`ALTER TABLE users DROP COLUMN login_email`); err != nil && !isMissingColumnError(err) && !isUnsupportedAlterError(err) {
+		return err
+	}
 
 	return nil
 }
 
 func isDuplicateColumnError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "duplicate column name:")
+}
+
+func isMissingColumnError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "no such column:")
+}
+
+func isUnsupportedAlterError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "syntax error")
 }
