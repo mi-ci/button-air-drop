@@ -81,6 +81,7 @@ func SetupRoutes(cfg *config.Config) (http.Handler, func(context.Context) error,
 	mux.HandleFunc("/status", srv.handleStatus)
 	mux.HandleFunc("/api/auth/kakao/start", srv.withPublicRateLimit(kakaoAuthRatePolicy, srv.handleKakaoStart))
 	mux.HandleFunc("/api/auth/kakao/callback", srv.withPublicRateLimit(kakaoAuthRatePolicy, srv.handleKakaoCallback))
+	mux.HandleFunc("/api/auth/dev-login", srv.withPublicRateLimit(kakaoAuthRatePolicy, srv.handleDevLogin))
 	mux.HandleFunc("/api/me", srv.withAuthRateLimit(authenticatedReadRatePolicy, srv.handleMe))
 	mux.HandleFunc("/api/me/profile", srv.withAuthRateLimit(profileUpdateRatePolicy, srv.handleProfileUpdate))
 	mux.HandleFunc("/api/game/state", srv.withPublicRateLimit(publicReadRatePolicy, srv.handleGameState))

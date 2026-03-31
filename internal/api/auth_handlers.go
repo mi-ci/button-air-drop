@@ -12,8 +12,8 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -142,6 +142,32 @@ func (s *Server) handleKakaoCallback(w http.ResponseWriter, r *http.Request) {
 	s.redirectLoginResult(w, r, token, user.Nickname, user.ContactEmail, "")
 }
 
+func (s *Server) handleDevLogin(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(os.Getenv("DEV_LOGIN_ENABLED")) != "true" {
+		http.Error(w, "dev login is disabled", http.StatusNotFound)
+		return
+	}
+
+	devKakaoID := strings.TrimSpace(os.Getenv("DEV_LOGIN_KAKAO_ID"))
+	if devKakaoID == "" {
+		devKakaoID = "dev-login-user"
+	}
+
+	user, err := s.ensureUserForKakaoID(devKakaoID)
+	if err != nil {
+		http.Error(w, "failed to create dev login user", http.StatusInternalServerError)
+		return
+	}
+
+	token, err := auth.SignToken(s.jwtSecret, user.UserID, user.Nickname, time.Now().Add(s.tokenTTL))
+	if err != nil {
+		http.Error(w, "failed to sign dev login token", http.StatusInternalServerError)
+		return
+	}
+
+	s.redirectLoginResult(w, r, token, user.Nickname, user.ContactEmail, "")
+}
+
 func (s *Server) lookupUser(userID string) (userProfile, error) {
 	var user userProfile
 	var consentInt int
@@ -170,8 +196,10 @@ func (s *Server) lookupUser(userID string) (userProfile, error) {
 }
 
 func (s *Server) ensureKakaoUser(kakaoUser kakaoUserInfo) (userProfile, error) {
-	kakaoID := strconv.FormatInt(kakaoUser.ID, 10)
+	return s.ensureUserForKakaoID(fmt.Sprintf("%d", kakaoUser.ID))
+}
 
+func (s *Server) ensureUserForKakaoID(kakaoID string) (userProfile, error) {
 	var existingUserID string
 	err := s.db.QueryRow(`SELECT user_id FROM users WHERE kakao_id = ?`, kakaoID).Scan(&existingUserID)
 	if err == nil {

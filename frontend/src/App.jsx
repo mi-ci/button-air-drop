@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
+const useDevLogin = import.meta.env.VITE_USE_DEV_LOGIN === "true";
+
 function App() {
   const [nickname, setNickname] = useState("");
   const [contactEmail, setContactEmail] = useState("");
@@ -228,7 +230,9 @@ function App() {
   const overlayOpen = drawerOpen || historyOpen || profileOpen;
 
   function startKakaoLogin() {
-    window.location.href = "/api/auth/kakao/start";
+    window.location.href = useDevLogin
+      ? "/api/auth/dev-login"
+      : "/api/auth/kakao/start";
   }
 
   async function clickButton() {
