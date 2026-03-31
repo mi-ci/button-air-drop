@@ -338,8 +338,18 @@ function App() {
       });
 
       if (!response.ok) {
+        const errorText = (await response.text()).trim();
         if (response.status === 409) {
           throw new Error("nickname-taken");
+        }
+        if (errorText === "nickname can only be changed once every 7 days") {
+          throw new Error("nickname-change-limited");
+        }
+        if (errorText === "contact email can only be changed once every 7 days") {
+          throw new Error("contact-email-change-limited");
+        }
+        if (errorText === "contact email consent required") {
+          throw new Error("contact-email-consent-required");
         }
         throw new Error("save-failed");
       }
@@ -361,6 +371,18 @@ function App() {
     } catch (error) {
       if (error.message === "nickname-taken") {
         setMessage("이미 사용 중인 닉네임입니다.");
+        return;
+      }
+      if (error.message === "nickname-change-limited") {
+        setMessage("닉네임은 7일에 한 번만 변경할 수 있습니다.");
+        return;
+      }
+      if (error.message === "contact-email-change-limited") {
+        setMessage("연락 이메일은 7일에 한 번만 변경할 수 있습니다.");
+        return;
+      }
+      if (error.message === "contact-email-consent-required") {
+        setMessage("이메일 저장을 위해 수집·이용 동의가 필요합니다.");
         return;
       }
       setMessage("마이페이지를 저장하지 못했습니다.");
