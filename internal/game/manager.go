@@ -10,18 +10,19 @@ import (
 type RankingEntry struct {
 	Rank        int    `json:"rank"`
 	Email       string `json:"email"`
-	MaskedEmail string `json:"maskedEmail"`
+	DisplayName string `json:"displayName"`
 	DurationMS  int64  `json:"durationMs"`
 }
 
 type State struct {
-	ServerTimeMS int64          `json:"serverTimeMs"`
-	RankingDate  string         `json:"rankingDate"`
-	RemainingMS  int64          `json:"remainingMs"`
-	InitialMS    int64          `json:"initialMs"`
-	LeaderEmail  string         `json:"leaderEmail"`
-	Leaderboard  []RankingEntry `json:"leaderboard"`
-	YesterdayWinner *RankingEntry `json:"yesterdayWinner,omitempty"`
+	ServerTimeMS    int64          `json:"serverTimeMs"`
+	RankingDate     string         `json:"rankingDate"`
+	RemainingMS     int64          `json:"remainingMs"`
+	InitialMS       int64          `json:"initialMs"`
+	LeaderEmail     string         `json:"leaderEmail"`
+	LeaderName      string         `json:"leaderName"`
+	Leaderboard     []RankingEntry `json:"leaderboard"`
+	YesterdayWinner *RankingEntry  `json:"yesterdayWinner,omitempty"`
 }
 
 type Manager struct {
@@ -105,10 +106,11 @@ func (m *Manager) Snapshot() (State, error) {
 		}
 		state.RemainingMS = remaining.Milliseconds()
 		state.LeaderEmail = m.leaderEmail
+		state.LeaderName = m.lookupDisplayName(m.leaderEmail)
 	}
 
 	rows, err := m.db.Query(`
-		SELECT email, masked_email, duration_ms
+		SELECT email, COALESCE(NULLIF(display_name, ''), masked_email), duration_ms
 		FROM ranking_entries
 		WHERE ranking_date = ?
 		ORDER BY duration_ms DESC, created_at ASC
@@ -123,7 +125,7 @@ func (m *Manager) Snapshot() (State, error) {
 	for rows.Next() {
 		var entry RankingEntry
 		entry.Rank = rank
-		if err := rows.Scan(&entry.Email, &entry.MaskedEmail, &entry.DurationMS); err != nil {
+		if err := rows.Scan(&entry.Email, &entry.DisplayName, &entry.DurationMS); err != nil {
 			return state, err
 		}
 		state.Leaderboard = append(state.Leaderboard, entry)
@@ -138,12 +140,12 @@ func (m *Manager) Snapshot() (State, error) {
 	var winner RankingEntry
 	winner.Rank = 1
 	err = m.db.QueryRow(`
-		SELECT email, masked_email, duration_ms
+		SELECT email, COALESCE(NULLIF(display_name, ''), masked_email), duration_ms
 		FROM ranking_entries
 		WHERE ranking_date = ?
 		ORDER BY duration_ms DESC, created_at ASC
 		LIMIT 1
-	`, yesterday).Scan(&winner.Email, &winner.MaskedEmail, &winner.DurationMS)
+	`, yesterday).Scan(&winner.Email, &winner.DisplayName, &winner.DurationMS)
 	if err != nil && err != sql.ErrNoRows {
 		return state, err
 	}
@@ -180,9 +182,9 @@ func (m *Manager) persistLeaderLocked(now time.Time) {
 	}
 
 	_, _ = m.db.Exec(`
-		INSERT INTO ranking_entries (ranking_date, email, masked_email, duration_ms, created_at)
-		VALUES (?, ?, ?, ?, ?)
-	`, rankingDate(now, m.location), m.leaderEmail, MaskEmail(m.leaderEmail), duration.Milliseconds(), now.Format(time.RFC3339Nano))
+		INSERT INTO ranking_entries (ranking_date, email, masked_email, display_name, duration_ms, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, rankingDate(now, m.location), m.leaderEmail, MaskEmail(m.leaderEmail), m.lookupDisplayName(m.leaderEmail), duration.Milliseconds(), now.Format(time.RFC3339Nano))
 
 	m.leaderEmail = ""
 	m.leaderSince = time.Time{}
@@ -247,6 +249,15 @@ func (m *Manager) restoreCurrentRound() {
 
 func rankingDate(now time.Time, loc *time.Location) string {
 	return now.In(loc).Format("2006-01-02")
+}
+
+func (m *Manager) lookupDisplayName(email string) string {
+	var nickname string
+	err := m.db.QueryRow(`SELECT nickname FROM users WHERE email = ?`, email).Scan(&nickname)
+	if err == nil && nickname != "" {
+		return nickname
+	}
+	return MaskEmail(email)
 }
 
 func MaskEmail(email string) string {

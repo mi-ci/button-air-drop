@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -27,16 +28,16 @@ import (
 )
 
 type Server struct {
-	cfg        *config.Config
-	db         *sql.DB
-	game       *game.Manager
-	jwtSecret  []byte
-	location   *time.Location
-	wsHub      *wsHub
-	codeTTL    time.Duration
-	tokenTTL   time.Duration
-	httpServer http.Handler
-	clickMu    sync.Mutex
+	cfg         *config.Config
+	db          *sql.DB
+	game        *game.Manager
+	jwtSecret   []byte
+	location    *time.Location
+	wsHub       *wsHub
+	codeTTL     time.Duration
+	tokenTTL    time.Duration
+	httpServer  http.Handler
+	clickMu     sync.Mutex
 	lastClickAt map[string]time.Time
 }
 
@@ -78,14 +79,14 @@ func SetupRoutes(cfg *config.Config) (http.Handler, func(context.Context) error,
 	manager.Start(ctx)
 
 	srv := &Server{
-		cfg:       cfg,
-		db:        db,
-		game:      manager,
-		jwtSecret: []byte(cfg.Auth.JWTSecret),
-		location:  loc,
-		wsHub:     newWSHub(),
-		codeTTL:   time.Duration(cfg.Auth.CodeTTLMinutes) * time.Minute,
-		tokenTTL:  time.Duration(cfg.Auth.AccessTokenHours) * time.Hour,
+		cfg:         cfg,
+		db:          db,
+		game:        manager,
+		jwtSecret:   []byte(cfg.Auth.JWTSecret),
+		location:    loc,
+		wsHub:       newWSHub(),
+		codeTTL:     time.Duration(cfg.Auth.CodeTTLMinutes) * time.Minute,
+		tokenTTL:    time.Duration(cfg.Auth.AccessTokenHours) * time.Hour,
 		lastClickAt: map[string]time.Time{},
 	}
 
@@ -94,6 +95,7 @@ func SetupRoutes(cfg *config.Config) (http.Handler, func(context.Context) error,
 	mux.HandleFunc("/api/auth/request", srv.handleAuthRequest)
 	mux.HandleFunc("/api/auth/verify", srv.handleAuthVerify)
 	mux.HandleFunc("/api/me", srv.withAuth(srv.handleMe))
+	mux.HandleFunc("/api/me/profile", srv.withAuth(srv.handleProfileUpdate))
 	mux.HandleFunc("/api/game/state", srv.handleGameState)
 	mux.HandleFunc("/api/game/click", srv.withAuth(srv.handleGameClick))
 	mux.HandleFunc("/api/rankings/today", srv.handleGameState)
@@ -182,11 +184,11 @@ func (s *Server) handleAuthRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":         true,
-		"email":      email,
-		"expiresAt":  expiresAt.Format(time.RFC3339),
-		"devCode":    code,
-		"message":    "Email sending is not connected yet. Use the returned devCode for now.",
+		"ok":          true,
+		"email":       email,
+		"expiresAt":   expiresAt.Format(time.RFC3339),
+		"devCode":     code,
+		"message":     "Email sending is not connected yet. Use the returned devCode for now.",
 		"maskedEmail": game.MaskEmail(email),
 	})
 }
@@ -239,6 +241,12 @@ func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user, err := s.ensureUser(email)
+	if err != nil {
+		http.Error(w, "failed to prepare user", http.StatusInternalServerError)
+		return
+	}
+
 	usage, err := s.getClickUsage(email)
 	if err != nil {
 		http.Error(w, "failed to load click usage", http.StatusInternalServerError)
@@ -247,15 +255,21 @@ func (s *Server) handleAuthVerify(w http.ResponseWriter, r *http.Request) {
 
 	_, _ = s.db.Exec(`DELETE FROM email_codes WHERE email = ?`, email)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"accessToken":   token,
+		"accessToken":    token,
 		"expiresInHours": int(s.tokenTTL.Hours()),
-		"email":         email,
-		"maskedEmail":   game.MaskEmail(email),
-		"clickUsage":    usage,
+		"email":          email,
+		"nickname":       user.Nickname,
+		"clickUsage":     usage,
 	})
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, _ *http.Request, email string) {
+	user, err := s.ensureUser(email)
+	if err != nil {
+		http.Error(w, "failed to load user", http.StatusInternalServerError)
+		return
+	}
+
 	usage, err := s.getClickUsage(email)
 	if err != nil {
 		http.Error(w, "failed to load click usage", http.StatusInternalServerError)
@@ -263,9 +277,55 @@ func (s *Server) handleMe(w http.ResponseWriter, _ *http.Request, email string) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"email":       email,
-		"maskedEmail": game.MaskEmail(email),
-		"clickUsage":  usage,
+		"email":      email,
+		"nickname":   user.Nickname,
+		"clickUsage": usage,
+	})
+}
+
+func (s *Server) handleProfileUpdate(w http.ResponseWriter, r *http.Request, email string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Nickname string `json:"nickname"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	nickname := normalizeNickname(req.Nickname)
+	if !isValidNickname(nickname) {
+		http.Error(w, "invalid nickname", http.StatusBadRequest)
+		return
+	}
+
+	if _, err := s.ensureUser(email); err != nil {
+		http.Error(w, "failed to load user", http.StatusInternalServerError)
+		return
+	}
+
+	now := time.Now().In(s.location).Format(time.RFC3339Nano)
+	_, err := s.db.Exec(`
+		UPDATE users
+		SET nickname = ?, updated_at = ?
+		WHERE email = ?
+	`, nickname, now, email)
+	if err != nil {
+		if isUniqueConstraintError(err) {
+			http.Error(w, "nickname already taken", http.StatusConflict)
+			return
+		}
+		http.Error(w, "failed to update profile", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"email":    email,
+		"nickname": nickname,
 	})
 }
 
@@ -377,7 +437,7 @@ func (s *Server) handleMyRanking(w http.ResponseWriter, _ *http.Request, email s
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"email":        email,
-		"maskedEmail":  game.MaskEmail(email),
+		"nickname":     s.lookupNickname(email),
 		"rankingDate":  currentRankingDate(now, s.location),
 		"attemptCount": len(entries),
 		"bestMs":       bestMS,
@@ -722,6 +782,77 @@ func (s *Server) logAuthRequest(ip string, now time.Time) error {
 		VALUES (?, ?)
 	`, ip, now.Format(time.RFC3339Nano))
 	return err
+}
+
+type userProfile struct {
+	Email    string
+	Nickname string
+}
+
+var nicknamePattern = regexp.MustCompile(`^[A-Za-z0-9가-힣]{2,12}$`)
+
+var nicknameAdjectives = []string{
+	"Mint", "Sunny", "Rapid", "Lucky", "Bold", "Calm", "Swift", "Bright",
+}
+
+var nicknameNouns = []string{
+	"Rocket", "Tiger", "Button", "Cloud", "Falcon", "Nova", "Pixel", "River",
+}
+
+func (s *Server) ensureUser(email string) (userProfile, error) {
+	var user userProfile
+	err := s.db.QueryRow(`SELECT email, nickname FROM users WHERE email = ?`, email).Scan(&user.Email, &user.Nickname)
+	if err == nil {
+		return user, nil
+	}
+	if err != sql.ErrNoRows {
+		return user, err
+	}
+
+	now := time.Now().In(s.location).Format(time.RFC3339Nano)
+	for range 64 {
+		nickname := randomNickname()
+		_, insertErr := s.db.Exec(`
+			INSERT INTO users (email, nickname, created_at, updated_at)
+			VALUES (?, ?, ?, ?)
+		`, email, nickname, now, now)
+		if insertErr == nil {
+			return userProfile{Email: email, Nickname: nickname}, nil
+		}
+		if !isUniqueConstraintError(insertErr) {
+			return userProfile{}, insertErr
+		}
+	}
+
+	return userProfile{}, errors.New("failed to generate unique nickname")
+}
+
+func (s *Server) lookupNickname(email string) string {
+	var nickname string
+	err := s.db.QueryRow(`SELECT nickname FROM users WHERE email = ?`, email).Scan(&nickname)
+	if err == nil && nickname != "" {
+		return nickname
+	}
+	return game.MaskEmail(email)
+}
+
+func randomNickname() string {
+	adjective := nicknameAdjectives[rand.IntN(len(nicknameAdjectives))]
+	noun := nicknameNouns[rand.IntN(len(nicknameNouns))]
+	number := rand.IntN(9000) + 1000
+	return fmt.Sprintf("%s%s%d", adjective, noun, number)
+}
+
+func normalizeNickname(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func isValidNickname(value string) bool {
+	return nicknamePattern.MatchString(value)
+}
+
+func isUniqueConstraintError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
 func clientIPFromRequest(r *http.Request) string {

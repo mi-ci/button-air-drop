@@ -26,6 +26,13 @@ func Open(path string) (*sql.DB, error) {
 
 func migrate(db *sql.DB) error {
 	const schema = `
+CREATE TABLE IF NOT EXISTS users (
+	email TEXT PRIMARY KEY,
+	nickname TEXT NOT NULL UNIQUE,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS email_codes (
 	email TEXT NOT NULL,
 	code TEXT NOT NULL,
@@ -74,6 +81,17 @@ CREATE INDEX IF NOT EXISTS idx_auth_request_log_ip_created
 	ON auth_request_log(ip_address, created_at);
 `
 
-	_, err := db.Exec(schema)
-	return err
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(`ALTER TABLE ranking_entries ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
+		return err
+	}
+
+	return nil
+}
+
+func isDuplicateColumnError(err error) bool {
+	return err != nil && err.Error() == "duplicate column name: display_name"
 }

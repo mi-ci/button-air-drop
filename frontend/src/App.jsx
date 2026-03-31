@@ -4,6 +4,7 @@ import "./App.css";
 function App() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
+  const [nickname, setNickname] = useState("");
   const [session, setSession] = useState(() => {
     const raw = window.localStorage.getItem("button-air-drop-session");
     return raw ? JSON.parse(raw) : null;
@@ -14,6 +15,7 @@ function App() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [myHistory, setMyHistory] = useState(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [clickUsage, setClickUsage] = useState(null);
@@ -122,7 +124,18 @@ function App() {
       },
     })
       .then((response) => response.json())
-      .then((data) => setClickUsage(data.clickUsage ?? null))
+      .then((data) => {
+        setClickUsage(data.clickUsage ?? null);
+        setSession((current) =>
+          current
+            ? {
+                ...current,
+                email: data.email ?? current.email,
+                nickname: data.nickname ?? current.nickname,
+              }
+            : current,
+        );
+      })
       .catch(() => {});
   }, [session?.accessToken]);
 
@@ -158,6 +171,7 @@ function App() {
         setLoginOpen(false);
         setDrawerOpen(false);
         setHistoryOpen(false);
+        setProfileOpen(false);
       }
     }
 
@@ -172,7 +186,7 @@ function App() {
 
     const timeout = window.setTimeout(() => {
       setMessage("");
-    }, 3000);
+    }, 5000);
 
     return () => window.clearTimeout(timeout);
   }, [message]);
@@ -181,7 +195,7 @@ function App() {
   const leaderboard = gameState?.leaderboard ?? [];
   const yesterdayWinner = gameState?.yesterdayWinner ?? null;
   const rankingDateLabel = gameState?.rankingDate ?? "-";
-  const overlayOpen = loginOpen || drawerOpen || historyOpen;
+  const overlayOpen = loginOpen || drawerOpen || historyOpen || profileOpen;
 
   async function requestCode(event) {
     event.preventDefault();
@@ -227,7 +241,7 @@ function App() {
       const data = await response.json();
       setSession({
         email: data.email,
-        maskedEmail: data.maskedEmail,
+        nickname: data.nickname,
         accessToken: data.accessToken,
       });
       setClickUsage(data.clickUsage ?? null);
@@ -317,11 +331,66 @@ function App() {
     }
   }
 
+  function openProfile() {
+    setNickname(session?.nickname ?? "");
+    setProfileOpen(true);
+    setDrawerOpen(false);
+  }
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    if (!session?.accessToken) {
+      return;
+    }
+
+    setPending(true);
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/me/profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+        body: JSON.stringify({ nickname }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          throw new Error("nickname-taken");
+        }
+        throw new Error("save-failed");
+      }
+
+      const data = await response.json();
+      setSession((current) =>
+        current
+          ? {
+              ...current,
+              nickname: data.nickname,
+            }
+          : current,
+      );
+      setProfileOpen(false);
+      setMessage("닉네임이 저장되었습니다.");
+    } catch (error) {
+      if (error.message === "nickname-taken") {
+        setMessage("이미 사용 중인 닉네임입니다.");
+        return;
+      }
+      setMessage("닉네임을 저장하지 못했습니다.");
+    } finally {
+      setPending(false);
+    }
+  }
+
   function logout() {
     setSession(null);
     setClickUsage(null);
     setDrawerOpen(false);
     setHistoryOpen(false);
+    setProfileOpen(false);
     setMessage("로그아웃되었습니다.");
   }
 
@@ -329,6 +398,7 @@ function App() {
     setLoginOpen(false);
     setDrawerOpen(false);
     setHistoryOpen(false);
+    setProfileOpen(false);
   }
 
   if (initialLoading && !gameState) {
@@ -351,7 +421,7 @@ function App() {
               className="profile-button"
               onClick={() => setDrawerOpen((value) => !value)}
             >
-              {session.email}
+              {session.nickname || session.email}
               <span className={`burger ${drawerOpen ? "is-open" : ""}`}>
                 <span />
                 <span />
@@ -365,11 +435,7 @@ function App() {
           )}
         </div>
       </header>
-      {/*
-        <section className="hero">
-          <span className="pill">shared timer button game</span>
-        </section>
-        */}
+
       <section className="layout">
         <div className="panel">
           <p className="section-title">Live Timer</p>
@@ -409,7 +475,7 @@ function App() {
             />
           </section>
 
-          <div className="meta"></div>
+          <div className="meta" />
         </div>
 
         <div className="panel">
@@ -421,13 +487,10 @@ function App() {
               leaderboard.map((entry) => (
                 <div
                   className="rank-row"
-                  key={`${entry.rank}-${entry.maskedEmail}-${entry.durationMs}`}
+                  key={`${entry.rank}-${entry.email}-${entry.durationMs}`}
                 >
                   <span>
-                    #{entry.rank}{" "}
-                    {entry.email === session?.email
-                      ? session.email
-                      : entry.maskedEmail}
+                    #{entry.rank} {entry.displayName}
                   </span>
                   <strong>{formatDuration(entry.durationMs)}</strong>
                 </div>
@@ -439,11 +502,7 @@ function App() {
             <p className="section-title">Yesterday Winner</p>
             {yesterdayWinner ? (
               <div className="rank-row">
-                <span>
-                  {yesterdayWinner.email === session?.email
-                    ? session.email
-                    : yesterdayWinner.maskedEmail}
-                </span>
+                <span>{yesterdayWinner.displayName}</span>
                 <strong>{formatDuration(yesterdayWinner.durationMs)}</strong>
               </div>
             ) : (
@@ -528,8 +587,12 @@ function App() {
 
           <div className="summary-grid">
             <div className="summary-row">
+              <span>닉네임</span>
+              <strong>{session?.nickname || myHistory?.nickname || "-"}</strong>
+            </div>
+            <div className="summary-row">
               <span>이메일</span>
-              <strong>{session?.email || myHistory?.maskedEmail || "-"}</strong>
+              <strong>{session?.email || myHistory?.email || "-"}</strong>
             </div>
             <div className="summary-row">
               <span>시도 횟수</span>
@@ -544,10 +607,7 @@ function App() {
           <div className="history-list" style={{ marginTop: 16 }}>
             {myHistory?.entries?.length ? (
               myHistory.entries.map((entry, index) => (
-                <div
-                  className="history-row"
-                  key={`${entry.createdAt}-${index}`}
-                >
+                <div className="history-row" key={`${entry.createdAt}-${index}`}>
                   <span>
                     {new Date(entry.createdAt).toLocaleTimeString("ko-KR", {
                       hour12: false,
@@ -561,13 +621,43 @@ function App() {
             )}
           </div>
         </div>
+
+        <div
+          className={`modal ${profileOpen ? "is-open" : ""}`}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="modal-header">
+            <div>
+              <h2>마이페이지</h2>
+              <p>공개 표시용 닉네임을 수정할 수 있습니다.</p>
+            </div>
+            <button className="icon-button" onClick={() => setProfileOpen(false)}>
+              ×
+            </button>
+          </div>
+
+          <form className="auth-form" onSubmit={saveProfile}>
+            <input type="email" value={session?.email ?? ""} disabled />
+            <input
+              type="text"
+              value={nickname}
+              onChange={(event) => setNickname(event.target.value)}
+              placeholder="닉네임 2~12자"
+            />
+            <div className="modal-actions">
+              <button className="primary-button" disabled={pending} type="submit">
+                저장
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
 
       <aside className={`drawer ${drawerOpen ? "is-open" : ""}`}>
         <div className="drawer-header">
           <div className="drawer-user">
-            <strong>{session?.email || "-"}</strong>
-            <span>오늘 버튼 게임 메뉴</span>
+            <strong>{session?.nickname || "-"}</strong>
+            <span>{session?.email || "오늘 버튼 게임 메뉴"}</span>
           </div>
           <button className="icon-button" onClick={() => setDrawerOpen(false)}>
             ×
@@ -575,6 +665,10 @@ function App() {
         </div>
 
         <nav className="drawer-menu">
+          <button className="drawer-item" onClick={openProfile}>
+            마이페이지
+            <span className="drawer-arrow">→</span>
+          </button>
           <button className="drawer-item" onClick={openMyHistory}>
             오늘 내 기록
             <span className="drawer-arrow">→</span>
@@ -594,9 +688,10 @@ function formatClock(ms) {
   const minutes = Math.floor(safe / 60000);
   const seconds = Math.floor((safe % 60000) / 1000);
   const centiseconds = Math.floor((safe % 1000) / 10);
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(
-    centiseconds,
-  ).padStart(2, "0")}`;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(
+    2,
+    "0",
+  )}.${String(centiseconds).padStart(2, "0")}`;
 }
 
 function formatDuration(ms) {
