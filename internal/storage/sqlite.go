@@ -79,25 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_auth_request_log_ip_created
 	if _, err := db.Exec(`ALTER TABLE ranking_entries ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
 		return err
 	}
-	if _, err := db.Exec(`ALTER TABLE users RENAME COLUMN email TO user_id`); err != nil && !isDuplicateColumnError(err) && !isUnsupportedAlterError(err) && !isMissingColumnError(err) {
-		return err
-	}
-	if _, err := db.Exec(`ALTER TABLE ranking_entries RENAME COLUMN email TO user_id`); err != nil && !isDuplicateColumnError(err) && !isUnsupportedAlterError(err) && !isMissingColumnError(err) {
-		return err
-	}
-	if _, err := db.Exec(`ALTER TABLE current_rounds RENAME COLUMN leader_email TO leader_user_id`); err != nil && !isDuplicateColumnError(err) && !isUnsupportedAlterError(err) && !isMissingColumnError(err) {
-		return err
-	}
-	if _, err := db.Exec(`ALTER TABLE daily_click_usage RENAME COLUMN email TO user_id`); err != nil && !isDuplicateColumnError(err) && !isUnsupportedAlterError(err) && !isMissingColumnError(err) {
-		return err
-	}
-	if _, err := db.Exec(`ALTER TABLE ranking_entries DROP COLUMN masked_email`); err != nil && !isMissingColumnError(err) && !isUnsupportedAlterError(err) {
-		return err
-	}
 	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN auth_provider TEXT NOT NULL DEFAULT 'kakao'`); err != nil && !isDuplicateColumnError(err) {
-		return err
-	}
-	if _, err := db.Exec(`UPDATE users SET auth_provider = 'kakao' WHERE auth_provider = 'email' AND kakao_id != ''`); err != nil {
 		return err
 	}
 	if _, err := db.Exec(`ALTER TABLE users ADD COLUMN kakao_id TEXT NOT NULL DEFAULT ''`); err != nil && !isDuplicateColumnError(err) {
@@ -119,21 +101,6 @@ CREATE INDEX IF NOT EXISTS idx_auth_request_log_ip_created
 		return err
 	}
 	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_kakao_id ON users(kakao_id)`); err != nil {
-		return err
-	}
-	if _, err := db.Exec(`UPDATE users SET user_id = kakao_id WHERE kakao_id != '' AND user_id LIKE 'kakao:%'`); err != nil {
-		return err
-	}
-	if _, err := db.Exec(`UPDATE ranking_entries SET user_id = substr(user_id, 7) WHERE user_id LIKE 'kakao:%'`); err != nil {
-		return err
-	}
-	if _, err := db.Exec(`UPDATE daily_click_usage SET user_id = substr(user_id, 7) WHERE user_id LIKE 'kakao:%'`); err != nil {
-		return err
-	}
-	if _, err := db.Exec(`UPDATE current_rounds SET leader_user_id = substr(leader_user_id, 7) WHERE leader_user_id LIKE 'kakao:%'`); err != nil {
-		return err
-	}
-	if _, err := db.Exec(`ALTER TABLE users DROP COLUMN login_email`); err != nil && !isMissingColumnError(err) && !isUnsupportedAlterError(err) {
 		return err
 	}
 
