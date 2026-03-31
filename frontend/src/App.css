@@ -271,7 +271,6 @@ input {
 }
 
 .rank-badge.rank-1 {
-  min-width: 74px;
   color: #402100;
   background: linear-gradient(135deg, #fff3ad 0%, #f3c347 45%, #d89016 100%);
   box-shadow: 0 10px 24px rgba(243, 195, 71, 0.28);

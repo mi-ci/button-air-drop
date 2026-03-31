@@ -483,7 +483,6 @@ function App() {
             <div className="prize-copy">
               <span className="prize-label">today reward</span>
               <strong>{formatKoreanDate(rankingDateLabel)}</strong>
-              <p>오늘 1등에게 지급되는 CU 2천원 상품입니다.</p>
             </div>
             <img
               className="prize-image"
