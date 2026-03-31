@@ -110,7 +110,7 @@ func (m *Manager) Snapshot() (State, error) {
 	}
 
 	rows, err := m.db.Query(`
-		SELECT email, COALESCE(NULLIF(display_name, ''), masked_email), duration_ms
+		SELECT user_id, display_name, duration_ms
 		FROM ranking_entries
 		WHERE ranking_date = ?
 		ORDER BY duration_ms DESC, created_at ASC
@@ -140,7 +140,7 @@ func (m *Manager) Snapshot() (State, error) {
 	var winner RankingEntry
 	winner.Rank = 1
 	err = m.db.QueryRow(`
-		SELECT email, COALESCE(NULLIF(display_name, ''), masked_email), duration_ms
+		SELECT user_id, display_name, duration_ms
 		FROM ranking_entries
 		WHERE ranking_date = ?
 		ORDER BY duration_ms DESC, created_at ASC
@@ -182,9 +182,9 @@ func (m *Manager) persistLeaderLocked(now time.Time) {
 	}
 
 	_, _ = m.db.Exec(`
-		INSERT INTO ranking_entries (ranking_date, email, masked_email, display_name, duration_ms, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, rankingDate(now, m.location), m.leaderUserID, MaskUserID(m.leaderUserID), m.lookupDisplayName(m.leaderUserID), duration.Milliseconds(), now.Format(time.RFC3339Nano))
+		INSERT INTO ranking_entries (ranking_date, user_id, display_name, duration_ms, created_at)
+		VALUES (?, ?, ?, ?, ?)
+	`, rankingDate(now, m.location), m.leaderUserID, m.lookupDisplayName(m.leaderUserID), duration.Milliseconds(), now.Format(time.RFC3339Nano))
 
 	m.leaderUserID = ""
 	m.leaderSince = time.Time{}
@@ -194,11 +194,11 @@ func (m *Manager) persistLeaderLocked(now time.Time) {
 
 func (m *Manager) saveCurrentRoundLocked(now time.Time) error {
 	_, err := m.db.Exec(`
-		INSERT INTO current_rounds (id, ranking_date, leader_email, leader_since, expires_at, updated_at)
+		INSERT INTO current_rounds (id, ranking_date, leader_user_id, leader_since, expires_at, updated_at)
 		VALUES (1, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			ranking_date = excluded.ranking_date,
-			leader_email = excluded.leader_email,
+			leader_user_id = excluded.leader_user_id,
 			leader_since = excluded.leader_since,
 			expires_at = excluded.expires_at,
 			updated_at = excluded.updated_at
@@ -213,7 +213,7 @@ func (m *Manager) restoreCurrentRound() {
 	var expiresAtRaw string
 
 	err := m.db.QueryRow(`
-		SELECT ranking_date, leader_email, leader_since, expires_at
+		SELECT ranking_date, leader_user_id, leader_since, expires_at
 		FROM current_rounds
 		WHERE id = 1
 	`).Scan(&rankingDay, &leaderUserID, &leaderSinceRaw, &expiresAtRaw)
@@ -253,16 +253,9 @@ func rankingDate(now time.Time, loc *time.Location) string {
 
 func (m *Manager) lookupDisplayName(userID string) string {
 	var nickname string
-	err := m.db.QueryRow(`SELECT nickname FROM users WHERE kakao_id = ? OR email = ? LIMIT 1`, userID, userID).Scan(&nickname)
+	err := m.db.QueryRow(`SELECT nickname FROM users WHERE kakao_id = ? OR user_id = ? LIMIT 1`, userID, userID).Scan(&nickname)
 	if err == nil && nickname != "" {
 		return nickname
 	}
-	return MaskUserID(userID)
-}
-
-func MaskUserID(userID string) string {
-	if len(userID) <= 4 {
-		return "***"
-	}
-	return userID[:2] + "***" + userID[len(userID)-2:]
+	return userID
 }

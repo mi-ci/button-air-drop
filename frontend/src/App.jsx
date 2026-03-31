@@ -27,7 +27,7 @@ function App() {
     if (accessToken) {
       setSession({
         userId: "",
-        contactEmail: params.get("contactEmail") ?? params.get("email") ?? "",
+        contactEmail: params.get("contactEmail") ?? "",
         nickname: params.get("nickname") ?? "",
         accessToken,
       });

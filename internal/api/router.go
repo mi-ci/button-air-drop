@@ -355,7 +355,7 @@ func (s *Server) handleProfileUpdate(w http.ResponseWriter, r *http.Request, use
 	_, err = s.db.Exec(`
 		UPDATE users
 		SET nickname = ?, nickname_changed_at = ?, contact_email = ?, contact_email_changed_at = ?, contact_email_consent = ?, contact_email_consent_at = ?, updated_at = ?
-		WHERE kakao_id = ? OR email = ?
+		WHERE kakao_id = ? OR user_id = ?
 	`, nickname, nicknameChangedAt, contactEmail, contactEmailChangedAt, boolToInt(req.ContactEmailConsent), consentTimestamp(contactEmail, req.ContactEmailConsent, now), now, userID, userID)
 	if err != nil {
 		if isUniqueConstraintError(err) {
@@ -448,7 +448,7 @@ func (s *Server) handleMyRanking(w http.ResponseWriter, _ *http.Request, userID 
 	rows, err := s.db.Query(`
 		SELECT duration_ms, created_at
 		FROM ranking_entries
-		WHERE ranking_date = ? AND email = ?
+		WHERE ranking_date = ? AND user_id = ?
 		ORDER BY duration_ms DESC, created_at ASC
 		LIMIT 10
 	`, currentRankingDate(now, s.location), userID)
@@ -831,7 +831,7 @@ func (s *Server) getClickUsage(userID string) (ClickUsage, error) {
 	err := s.db.QueryRow(`
 		SELECT click_count
 		FROM daily_click_usage
-		WHERE ranking_date = ? AND email = ?
+		WHERE ranking_date = ? AND user_id = ?
 	`, currentRankingDate(time.Now().In(s.location), s.location), userID).Scan(&used)
 	if err != nil && err != sql.ErrNoRows {
 		return ClickUsage{}, err
@@ -863,9 +863,9 @@ func (s *Server) consumeClickIfAllowed(userID string) (bool, ClickUsage, error) 
 func (s *Server) incrementClickUsage(userID string) (ClickUsage, error) {
 	now := time.Now().In(s.location)
 	_, err := s.db.Exec(`
-		INSERT INTO daily_click_usage (ranking_date, email, click_count, updated_at)
+		INSERT INTO daily_click_usage (ranking_date, user_id, click_count, updated_at)
 		VALUES (?, ?, 1, ?)
-		ON CONFLICT(ranking_date, email) DO UPDATE SET
+		ON CONFLICT(ranking_date, user_id) DO UPDATE SET
 			click_count = daily_click_usage.click_count + 1,
 			updated_at = excluded.updated_at
 	`, currentRankingDate(now, s.location), userID, now.Format(time.RFC3339Nano))
@@ -983,9 +983,9 @@ func (s *Server) lookupUser(userID string) (userProfile, error) {
 	var user userProfile
 	var consentInt int
 	err := s.db.QueryRow(`
-		SELECT email, kakao_id, nickname, contact_email, contact_email_consent, nickname_changed_at, contact_email_changed_at
+		SELECT user_id, kakao_id, nickname, contact_email, contact_email_consent, nickname_changed_at, contact_email_changed_at
 		FROM users
-		WHERE kakao_id = ? OR email = ?
+		WHERE kakao_id = ? OR user_id = ?
 		LIMIT 1
 	`, userID, userID).Scan(
 		&user.UserID,
@@ -1025,7 +1025,7 @@ func (s *Server) ensureKakaoUser(kakaoUser kakaoUserInfo) (userProfile, error) {
 	kakaoID := strconv.FormatInt(kakaoUser.ID, 10)
 
 	var existingUserID string
-	err := s.db.QueryRow(`SELECT kakao_id FROM users WHERE kakao_id = ?`, kakaoID).Scan(&existingUserID)
+	err := s.db.QueryRow(`SELECT user_id FROM users WHERE kakao_id = ?`, kakaoID).Scan(&existingUserID)
 	if err == nil {
 		return s.lookupUser(existingUserID)
 	}
@@ -1038,7 +1038,7 @@ func (s *Server) ensureKakaoUser(kakaoUser kakaoUserInfo) (userProfile, error) {
 	for range 64 {
 		nickname := randomNickname()
 		_, insertErr := s.db.Exec(`
-			INSERT INTO users (email, nickname, created_at, updated_at, auth_provider, kakao_id)
+			INSERT INTO users (user_id, nickname, created_at, updated_at, auth_provider, kakao_id)
 			VALUES (?, ?, ?, ?, 'kakao', ?)
 		`, userID, nickname, now, now, kakaoID)
 		if insertErr == nil {
