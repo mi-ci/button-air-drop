@@ -354,9 +354,9 @@ func (s *Server) handleProfileUpdate(w http.ResponseWriter, r *http.Request, use
 
 	_, err = s.db.Exec(`
 		UPDATE users
-		SET nickname = ?, nickname_changed_at = ?, contact_email = ?, contact_email_changed_at = ?, contact_email_consent = ?, contact_email_consent_at = ?, updated_at = ?
+		SET nickname = ?, nickname_changed_at = ?, contact_email = ?, contact_email_changed_at = ?, contact_email_consent = ?, updated_at = ?
 		WHERE kakao_id = ? OR user_id = ?
-	`, nickname, nicknameChangedAt, contactEmail, contactEmailChangedAt, boolToInt(req.ContactEmailConsent), consentTimestamp(contactEmail, req.ContactEmailConsent, now), now, userID, userID)
+	`, nickname, nicknameChangedAt, contactEmail, contactEmailChangedAt, boolToInt(req.ContactEmailConsent), now, userID, userID)
 	if err != nil {
 		if isUniqueConstraintError(err) {
 			http.Error(w, "nickname already taken", http.StatusConflict)
@@ -1038,8 +1038,8 @@ func (s *Server) ensureKakaoUser(kakaoUser kakaoUserInfo) (userProfile, error) {
 	for range 64 {
 		nickname := randomNickname()
 		_, insertErr := s.db.Exec(`
-			INSERT INTO users (user_id, nickname, created_at, updated_at, auth_provider, kakao_id)
-			VALUES (?, ?, ?, ?, 'kakao', ?)
+			INSERT INTO users (user_id, nickname, created_at, updated_at, kakao_id)
+			VALUES (?, ?, ?, ?, ?)
 		`, userID, nickname, now, now, kakaoID)
 		if insertErr == nil {
 			return userProfile{
@@ -1195,13 +1195,6 @@ func boolToInt(value bool) int {
 		return 1
 	}
 	return 0
-}
-
-func consentTimestamp(contactEmail string, consent bool, now string) string {
-	if contactEmail == "" || !consent {
-		return ""
-	}
-	return now
 }
 
 func subtleConstantEqual(a, b string) bool {
