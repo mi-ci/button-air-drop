@@ -972,11 +972,15 @@ type kakaoUserInfo struct {
 var nicknamePattern = regexp.MustCompile(`^[A-Za-z0-9가-힣]{2,12}$`)
 
 var nicknameAdjectives = []string{
-	"Mint", "Sunny", "Rapid", "Lucky", "Bold", "Calm", "Swift", "Bright",
+	"초록", "맑은", "푸른", "고운", "환한", "검은", "하얀", "붉은",
+	"노란", "은빛", "금빛", "짙은", "밝은", "가벼", "조용", "반짝",
+	"산뜻", "따뜻", "차분", "달큰", "선명", "싱그", "보송", "포근",
 }
 
 var nicknameNouns = []string{
-	"Rocket", "Tiger", "Button", "Cloud", "Falcon", "Nova", "Pixel", "River",
+	"호랑", "구름", "바다", "별빛", "산책", "노을", "바람", "여름",
+	"달빛", "새벽", "하늘", "파도", "은하", "서리", "단비", "이슬",
+	"숲길", "겨울", "가을", "봄날", "벚꽃", "소나", "강물", "들꽃",
 }
 
 func (s *Server) lookupUser(userID string) (userProfile, error) {
@@ -1174,7 +1178,7 @@ func (s *Server) redirectLoginResult(w http.ResponseWriter, r *http.Request, tok
 func randomNickname() string {
 	adjective := nicknameAdjectives[rand.IntN(len(nicknameAdjectives))]
 	noun := nicknameNouns[rand.IntN(len(nicknameNouns))]
-	number := rand.IntN(9000) + 1000
+	number := rand.IntN(900000) + 100000
 	return fmt.Sprintf("%s%s%d", adjective, noun, number)
 }
 
