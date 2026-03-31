@@ -93,6 +93,7 @@ func SetupRoutes(cfg *config.Config) (http.Handler, func(context.Context) error,
 	srv.httpServer = mux
 
 	go srv.broadcastLoop(ctx)
+	go srv.startCleanupLoop(ctx)
 
 	cleanup := func(_ context.Context) error {
 		cancel()

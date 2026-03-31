@@ -62,6 +62,28 @@ CREATE TABLE IF NOT EXISTS daily_click_usage (
 	PRIMARY KEY (ranking_date, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS ranking_entries_archive (
+	id INTEGER PRIMARY KEY,
+	ranking_date TEXT NOT NULL,
+	user_id TEXT NOT NULL,
+	duration_ms INTEGER NOT NULL,
+	created_at TEXT NOT NULL,
+	display_name TEXT NOT NULL DEFAULT '',
+	archived_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ranking_entries_archive_date_duration
+	ON ranking_entries_archive(ranking_date, duration_ms DESC, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS daily_click_usage_archive (
+	ranking_date TEXT NOT NULL,
+	user_id TEXT NOT NULL,
+	click_count INTEGER NOT NULL DEFAULT 0,
+	updated_at TEXT NOT NULL,
+	archived_at TEXT NOT NULL,
+	PRIMARY KEY (ranking_date, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS auth_request_log (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	ip_address TEXT NOT NULL,
