@@ -77,9 +77,6 @@ func LoadConfig(path string) (*Config, error) {
 	if cfg.Kakao.RedirectURI == "" {
 		cfg.Kakao.RedirectURI = os.Getenv("KAKAO_REDIRECT_URI")
 	}
-	if cfg.Kakao.Scope == "" {
-		cfg.Kakao.Scope = "account_email"
-	}
 
 	return &cfg, nil
 }
