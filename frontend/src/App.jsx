@@ -502,12 +502,15 @@ function App() {
             ) : (
               leaderboard.map((entry) => (
                 <div
-                  className="rank-row"
+                  className={`rank-row ${entry.rank === 1 ? "is-champion" : ""}`}
                   key={`${entry.rank}-${entry.userId}-${entry.durationMs}`}
                 >
-                  <span>
-                    #{entry.rank} {entry.displayName}
-                  </span>
+                  <div className="rank-label">
+                    <span className={`rank-badge rank-${entry.rank}`}>
+                      {entry.rank === 1 ? "TROPHY" : `${entry.rank}위`}
+                    </span>
+                    <span className="rank-name">{entry.displayName}</span>
+                  </div>
                   <strong>{formatDuration(entry.durationMs)}</strong>
                 </div>
               ))
